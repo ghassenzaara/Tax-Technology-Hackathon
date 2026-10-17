@@ -52,7 +52,7 @@ flowchart TD
  
     %% Phase 4: Screening loop
     subgraph P4["4. Constant screening loop"]
-        NEWS["Fetch new and upcoming tax laws<br/>(BMF, NeuRIS, DIP, EUR-Lex)"]
+        NEWS["Take a law (prototype: one law PDF,<br/>parsed by our pipeline)"]
         CHUNK["Split each law into sections<br/>and embed each section"]
         FILTER{"Stage 1: rule filter<br/>legal form, industry, region, thresholds"}
         SIM{"Stage 2: max similarity over<br/>company features above threshold?"}
