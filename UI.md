@@ -20,7 +20,7 @@ Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section
    - fill in or deliberately leave empty any field where nothing was found;
    - see which values need review;
    - confirm the profile with one action.
-4. **Later (not specified yet):** alerts with the matched feature and law section, email draft editor, in-app calendar.
+4.  alerts with the matched feature and law section, email draft editor, in-app calendar.
 
 ## 2. Constraints the UI must follow
 
