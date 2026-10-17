@@ -69,13 +69,13 @@ flowchart TD
     %% Phase 5: Notify and offer
     subgraph P5["5. Notify and reach out"]
         ALERT["Alert the Steuerberater<br/>with matched feature and law section"]
-        DRAFT["Propose an email draft"]
+        DRAFT["Show the fixed email template<br/>advisor may edit the text"]
         CONF{"Confirm?"}
         SEND["Send email to the client"]
         CAL["Add event to the in-app calendar"]
         ALERT --> DRAFT --> CONF
         CONF -->|yes| SEND --> CAL
-        CONF -->|no / edit| DRAFT
+        CONF -->|edit| DRAFT
     end
     JUDGE -->|yes| ALERT
     CAL -.->|keep screening| NEWS
