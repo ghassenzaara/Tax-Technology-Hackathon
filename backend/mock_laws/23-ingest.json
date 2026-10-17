@@ -1,0 +1,38 @@
+{
+  "ingest": {
+    "law_id": 9,
+    "title": "BFH-Urteil vom 16. Juli 2025, I R 1/23 – § 8c KStG und Wirkung auf ein Verlustausgleichsvolumen des Vorjahres",
+    "kind": "other",
+    "status": "in_kraft",
+    "published_at": null,
+    "effective_at": null,
+    "strategy": "headings",
+    "sections": 32,
+    "norms_found": [
+      "§ 8c KStG",
+      "§ 10d EStG",
+      "§ 164 AO"
+    ],
+    "norms_unmatched": [
+      "§ 8 Abs. 1 KStG",
+      "§ 2 Abs. 2 EStG",
+      "§ 2 Abs. 4 UmwStG",
+      "§ 4 Abs. 2 S. 2 UmwStG",
+      "§ 2 Abs. 4 S. 2 UmwStG",
+      "§ 2 Abs. 4 S. 1 UmwStG",
+      "§ 2 UmwStG",
+      "§ 2 Abs. 1 UmwStG",
+      "§ 2 Abs. 1 S. 1 UmwStG",
+      "§ 31 Abs. 1 KStG",
+      "§ 25 Abs. 1 S. 1 EStG",
+      "§ 7 Abs. 3 S. 3 KStG"
+    ],
+    "dropped": [
+      "page numbers (7 lines)"
+    ],
+    "replaced": false,
+    "input_tokens": 4187,
+    "output_tokens": 163,
+    "seconds": 6.046573400000852
+  }
+}

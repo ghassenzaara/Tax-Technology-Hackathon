@@ -1,0 +1,45 @@
+{
+  "laws": [
+    {
+      "kind": "other",
+      "title": "Urteil vom 05. November 2025, I R 37/22 – Ertragsteuerrechtliche Organschaft – Anforderungen an die tatsächliche Durchführung eines Gewinnabführungsvertrags",
+      "reference": null,
+      "published_at": null,
+      "effective_at": null,
+      "status": "in_kraft",
+      "legal_forms": [],
+      "tax_types": [
+        "KSt",
+        "GewSt"
+      ],
+      "summary": "Das Urteil behandelt die Voraussetzungen für die tatsächliche Durchführung eines Gewinnabführungsvertrags als Grundlage einer körperschaft- und gewerbesteuerrechtlichen Organschaft. Dafür müssen die daraus resultierenden Forderungen und Verbindlichkeiten in den Jahresabschlüssen gebucht und die fälligen Ansprüche grundsätzlich innerhalb von zwölf Monaten erfüllt werden.",
+      "change_summary": null,
+      "id": 3,
+      "filename": "BFH-Urteil-I-R-37-22.pdf",
+      "content_hash": "b274f2a3419110c42590ae3515c6d18dbea487e733d6180ae87ba2bcc6a11e8b",
+      "ingested_at": "2026-10-17T15:32:02.532120Z",
+      "sections": 32
+    },
+    {
+      "kind": "other",
+      "title": "BFH-Urteil vom 16. Juli 2025, I R 1/23 – § 8c KStG und Wirkung auf ein Verlustausgleichsvolumen des Vorjahres",
+      "reference": null,
+      "published_at": null,
+      "effective_at": null,
+      "status": "in_kraft",
+      "legal_forms": [
+        "GmbH"
+      ],
+      "tax_types": [
+        "KSt"
+      ],
+      "summary": "Das Urteil klärt, dass § 8c KStG den Verlustrücktrag negativer Einkünfte aus dem Wirtschaftsjahr eines schädlichen Beteiligungserwerbs in das Vorjahr nicht ausschließt. Diese Einkünfte können mit dem im Vorjahr erzielten positiven Gesamtbetrag der Einkünfte verrechnet werden.",
+      "change_summary": "Der BFH stellt klar, dass § 8c KStG den Verlustrücktrag negativer Einkünfte, die vor dem schädlichen Beteiligungserwerb im selben Wirtschaftsjahr entstanden sind, in das Vorjahr nicht ausschließt. Diese Einkünfte können mit einem im Vorjahr erwirtschafteten positiven Gesamtbetrag der Einkünfte verrechnet werden.",
+      "id": 9,
+      "filename": "BFH-Urteil-I-R-1-23.pdf",
+      "content_hash": "1fa9c885726df14bb826cab678b81f849256a4e701c85a32ea258910b1a7d672",
+      "ingested_at": "2026-10-17T15:45:37.229744Z",
+      "sections": 32
+    }
+  ]
+}

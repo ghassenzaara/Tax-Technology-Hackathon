@@ -23,19 +23,19 @@ Diagram: `Project Diagram.mmd`. Use these step numbers when referring to a part 
 | 8 | Advisor reviews and confirms the profile; later the advisor can update entries (audit log kept, vectors refreshed) | 3. Company profile | Built (services, CLI and HTTP API) |
 | 9 | Turn each feature into a descriptive sentence, embed it, store the vectors | 3. Company profile | Built |
 | 10 | Delete raw documents, scan markdown, candidate rows, drafts | 3. Company profile | Built |
-| 11 | Take a law (prototype: one hand-picked law PDF, parsed by our pipeline; no fetching) | 4. Screening loop | Planned |
-| 12 | Split laws into sections and embed each section (deterministic splitter, norms by regex) | 4. Screening loop | Planned |
-| 13 | Stage 1: rule filter on structured fields | 4. Screening loop | Planned |
-| 14 | Stage 2: max vector similarity over company features | 4. Screening loop | Planned |
-| 15 | Stage 3: LLM judge, store the match | 4. Screening loop | Planned |
-| 16 | Alert the advisor with matched feature and law section | 5. Notify and reach out | Planned |
-| 17 | Prepare the email from the fixed template (same text for every client, no LLM); the advisor may edit it before sending | 5. Notify and reach out | Planned |
-| 18 | Advisor confirms, email is sent | 5. Notify and reach out | Planned |
-| 19 | Add event to the in-app calendar | 5. Notify and reach out | Planned |
+| 11 | Take a supplied legal-source PDF, parsed by our pipeline; no fetching | 4. Screening loop | Built (CLI and HTTP API) |
+| 12 | Split sources into sections and embed each section (deterministic splitter, norms by regex) | 4. Screening loop | Built |
+| 13 | Stage 1: rule filter on structured fields | 4. Screening loop | Built |
+| 14 | Stage 2: max vector similarity over company features | 4. Screening loop | Built |
+| 15 | Stage 3: LLM judge, store the match | 4. Screening loop | Built (services, CLI and HTTP API; live check passed) |
+| 16 | Alert the advisor with matched feature and law section | 5. Notify and reach out | Built (services, CLI and HTTP API) |
+| 17 | Prepare the email from the fixed template (same text for every client, no LLM); the advisor may edit it before sending | 5. Notify and reach out | Built (services, CLI and HTTP API) |
+| 18 | Advisor confirms, email is sent | 5. Notify and reach out | Built (services, CLI and HTTP API; log mode and SMTP; live Gmail check pending account setup) |
+| 19 | Add event to the in-app calendar | 5. Notify and reach out | Deferred by user; no implementation |
 
-Step 0: the UI (teammates) sends the folder; our backend receives it through the HTTP API and upload layer (built following `API Upload Implementation Plan.md`; the contract for the UI team is `backend/openapi.json` plus `UI.md`). The API holds no business logic: it calls the services of the other steps. Calls: Health, Upload, Progress, Rerun, Draft, Confirm, Update, Audit, Companies, Profile. One upload request carries the whole data room with relative paths; untrusted paths are checked and files stream to a per-company folder (`data/uploads/<company_id>`); the run (steps 1 to 7 plus publish) runs in the background and the UI polls Progress. After Confirm, embedding and cleanup (steps 9 and 10) run in the background; after an Update the vectors are refreshed in the background. Contract clause about saving the profile is a pitch point only (no code).
+Step 0: the UI (teammates) sends the folder; our backend receives it through the HTTP API and upload layer (built following `API Upload Implementation Plan.md`; the contract for the UI team is `backend/openapi.json` plus `UI.md`). The API holds no business logic: it calls the services of the other steps. Calls: Health, Upload, Progress, Rerun, Draft, Confirm, Update, Audit, Companies, Profile, and for steps 11 to 18 Laws (upload a PDF, list, detail), Screenings, Matches, Alerts (list, detail, seen, dismiss), Email template (read, edit), Email preview, Send, Outreach, plus Jobs (poll, retry) and Recover. One upload request carries the whole data room with relative paths; untrusted paths are checked and files stream to a per-company folder (`data/uploads/<company_id>`); the run (steps 1 to 7 plus publish) runs in the background and the UI polls Progress. A draft that cannot be saved (after the database-write retries) fails the run; nothing is published. Long work after the run is a persisted background job that the UI polls (`202` with `Location: /api/jobs/<id>`): after Confirm, embedding and cleanup (steps 9 and 10); after an Update, the vector refresh and, with `SCREEN_AFTER_UPDATE=true`, the re-screening of the changes (the same orchestration as the CLI); law ingestion; screening. One active job per company (a conflicting request answers `409 busy`). A restart marks unfinished jobs `interrupted` and clears abandoned step markers, but never resumes work or calls an LLM: the UI retries a failed or interrupted job explicitly, or calls Recover, which selects the work from the project state (confirmed: embed and clean up; stale vectors: rebuild them; embedded: clean up; cleaned: nothing unless files are left or configured screening is pending; published: refused, use Rerun). Recover never repeats a confirmation or sends an email. Cleanup keeps the run's folder reference until the files are verified gone (and also checks `data/uploads/<company_id>` itself), so a failed or interrupted cleanup can be retried. Sending stays a synchronous, explicitly confirmed call outside the job queue. Browser clients can read every error: CORS and the request id also apply to the upload size limit and to unexpected 500s. Contract clause about saving the profile is a pitch point only (no code).
 
-**Ownership.** Decided: steps 11 and 12 are ours for the prototype and reduced to one hand-picked law PDF that was published earlier and fits the mock case; the backend parses, splits and embeds it itself, no fetching and no API call to a law source (the teammates' search for real sources is parked). Our team owns steps 0 to 15 and the backend logic of steps 16 to 19 (section 2.6). Matching is planned in `Matching Implementation Plan.md`. The frontend, the fixtures and the DB schema `profil` come from teammates. The frontend, the fixtures and the DB schema `profil` come from teammates.
+**Ownership.** Steps 11 and 12 are ours for the prototype: the backend parses, splits and embeds one supplied PDF, with no fetching or API call to a law source. The matching input is the user-supplied `BFH-Urteil-I-R-1-23.pdf` in `backend/mock_laws/`. The earlier I R 37/22 PDF belonged to another test company and is retained only as a previous run. Sources use the existing `other` kind in `screening`; `profil.urteil` stays unused. Our team owns steps 0 to 15 and the backend logic of steps 16 to 19 (section 2.6). Matching is implemented following `Matching Implementation Plan.md`. The frontend, fixtures and DB schema `profil` come from teammates.
 
 ---
 
@@ -66,24 +66,28 @@ Step 0: the UI (teammates) sends the folder; our backend receives it through the
 - Storage, one row per feature: `company_id, feature_type, text, vector`.
 
 ### 2.4 Law ingestion
-- Prototype (decided): one law PDF supplied by the user, ingested by a CLI command; our pipeline parses it, splits it into sections and embeds each section (law text itself, not a paraphrase). Laws live in our schema `screening`, not in `profil`. Fetching from real sources is out of scope for now.
+- Prototype (built): one supplied legal-source PDF, ingested by `--ingest-law`; our pipeline parses it, splits it into sections and embeds each section (source text itself, not a paraphrase). Laws live in our schema `screening`, not in `profil`. The supplied BFH ruling is stored as kind `other`, with sequential margin-number splitting. Automated fetching and a separate court-ruling workflow remain out of scope.
 - Later sources (not built, start with 2 or 3, add more later): BMF-Schreiben, NeuRIS / rechtsinformationen.bund.de, Bundestag DIP, EUR-Lex / Cellar SPARQL, later BFH rulings and BGBl.
 - Split each law into **sections** and embed each section separately.
 
 ### 2.5 Matching: 3 stages
-1. **Rule filter** on structured fields: legal form, industry, region, numeric thresholds.
+1. **Rule filter** on legal form and pair-level tax-type overlap. Missing values pass; norm overlap is a signal, not a filter or threshold bypass. Industry, region, numeric thresholds and temporal rules are deferred in this milestone.
 2. **Vector match:** `score(company, law_section) = max over features of cos(feature, section)`. Max, not average.
 3. **LLM judge:** "relevant yes/no, why", referencing the matched feature and law section.
 
 Every hit is stored as `(company_id, feature_id, law_section_id, score, judge_reason)`, which feeds the alert. The email does not use the hit details: it is the same template for every client.
 
+**Freshness of stored decisions.** Every screening execution reconciles all earlier decisions of the company within its scope (one law or all laws). A verdict is reused (no LLM call) only while its input fingerprint is unchanged: the judge's system prompt, output schema, model and reasoning effort, the ordered candidate features with their scores and flags, and every complete judge message (so years, `offen`, norms, tax types and a newly stronger feature all count; the profile version does not, so a contact edit costs nothing). Decisions that no longer qualify (feature removed, rule excluded, below the threshold) become non-current (`is_current=false`, `invalidation_reason`), keep their historical verdict, and their new/seen alerts become obsolete; dismissed and actioned alerts never change. Any non-contact profile edit makes the company's decisions non-current until screening validates them again; meanwhile their alerts keep their status but cannot be previewed or sent. The candidate cap (20) is the number of changed sections judged per execution; cached sections cost nothing, the rest is reported as deferred (not irrelevant) and the next explicit screening continues. Judge failures stay non-current and are retried; completed sections are reused. Profile-change audit entries are marked screened only once the reconciliation is complete, in the same transaction as the decisions and their alerts. Matches stored before fingerprints existed get none: one explicit screening pass makes them current again (no LLM call at migration or startup). A dry run changes nothing.
+
+Source-level matching UI data: `summary` supplies **Zusammenfassung**, `change_summary` supplies **Was ändert sich?**, and each matched company's `judge_reason` plus direction supplies **Relevanz und Auswirkungen**. The existing metadata call generates the separate German change/clarification explanation from source pages; missing evidence stays null and rulings describe a court clarification rather than a legislative amendment. `006_law_change_summary.sql` adds the nullable column without replacing sources or matches. CLI JSON exports and the HTTP Laws calls include it; frontend rendering is the UI team's part.
+
 ### 2.6 Notify and reach out
 - Alert shows: law section, matched feature, reason.
 - The email is **one fixed template, the same for every client**. It is not drafted by an LLM and not tailored to the company or the law. Only the recipient (the client's contact) differs. The advisor sees the template text and **can edit it before sending**; an edit applies only to that one email, the stored template stays unchanged. The advisor then confirms and sends. **The send request carries the final recipient, subject and text from the UI; the backend sends exactly that** (not the stored template), validates it (non-empty, valid address) and stores it as a snapshot in `outreach`. The stored template is changed only through a separate explicit "edit template" action. The recipient can be changed per send as well.
-- On confirm: send the email and create a calendar event in the app.
+- On explicit confirmation: send the email, preserve the final snapshot, mark the alert actioned and append the audit entry. The send guard (alert new or seen, decision current, vectors fresh, no active work of the company, no pending or earlier sent attempt) is checked by the preview and again while the durable pending record is reserved. An uncertain delivery stays pending until it is resolved deliberately (CLI `--outreach-resolve`); no retry action can resend an email. Calendar is deferred by the user's decision; no event, follow-up date or calendar configuration is created.
 - **Audit:** every email send and every template edit writes an audit entry (when); the sent email itself is the `outreach` snapshot.
 - Human in the loop is mandatory (the advisor stays responsible for the advice).
-- **Split between backend and frontend (steps 16 to 19).** The frontend only displays and collects input. The backend owns the logic: step 16 stores each alert (match, law section, matched feature, reason, status new/seen/dismissed/actioned) and serves the alert list; step 17 stores the one email template, fills in the recipient and serves the preview text; step 18 accepts the advisor's confirmation with the optional edited text, sends the email through the mail provider (decided: Gmail with the user's own account, SMTP with an app password for the prototype) and records it in `outreach`; step 19 stores the calendar event and serves the calendar list. Details in `Alerts Email Calendar Implementation Plan.md`. The client contact's email address becomes a new profile field (`gesellschaft.ansprechpartner_email`, filled by extraction when a document states it, otherwise "not available" and the advisor types it at send time; never guessed). The template text is proposed in the plan and awaits the user's changes. A test redirect (`MAIL_REDIRECT_TO`) keeps mock sends from reaching third parties.
+- **Split between backend and frontend (steps 16 to 19).** The frontend only displays and collects input. The backend owns the logic: step 16 stores each alert (match, law section, matched feature, reason, status new/seen/dismissed/actioned) and serves the alert list; step 17 stores the one email template, fills in the recipient and serves the preview text; step 18 accepts the advisor's confirmation with the optional edited text, sends the email through the mail provider (decided: Gmail with the user's own account, SMTP with an app password for the prototype) and records it in `outreach`; step 19 is deferred by user decision, with no calendar implementation. Details in `Alerts Email Calendar Implementation Plan.md`. The client contact's email address is now a profile field (`gesellschaft.ansprechpartner_email`, filled by extraction when a document states it, otherwise "not available" and the advisor types it at send time; never guessed). The template text is proposed in the plan and awaits the user's changes. A test redirect (`MAIL_REDIRECT_TO`) keeps mock sends from reaching third parties.
 
 ---
 
@@ -99,30 +103,39 @@ companies(id, name, profile_json, contact_name, contact_email, created_at)
 
 company_features(id, company_id, feature_type, text, vector, source_doc, source_page)
 
-law(id, kind, title, reference, published_at, effective_at, status, legal_forms, tax_types, summary, filename, content_hash)
+law(id, kind, title, reference, published_at, effective_at, status, legal_forms, tax_types, summary, change_summary, filename, content_hash)
     -- schema screening (ours), see Matching Implementation Plan.md
 
 law_section(id, law_id, nr, section_ref, heading, page_from, page_to, text, norms, tax_types, model, vector)
 
 match(id, company_id, law_id, law_section_id, objekt_typ, objekt_id, feature_text, score, norm_match,
-      judge_relevant, judge_direction, judge_reason, trigger, profile_version, created_at)
-      -- one stored pair per company and section; the alert status layer (new, seen, dismissed, actioned) comes with step 16
+      judge_relevant, judge_direction, judge_reason, trigger, profile_version, created_at,
+      is_current, input_fingerprint, invalidation_reason)
+      -- one stored decision per company and section; non-current decisions are history only
+      -- invalidation_reason: not_candidate (final) | profile_changed | deferred | judge_failed | migrated
+
+coverage(company_id, law_id, complete, deferred, unjudged, profile_version, screened_at)
+      -- schema screening: is the company's screening against a law complete?
+
+jobs(id, operation, company_id, status, dedupe_key, params, private, result, error, retry_of, created_at, started_at, finished_at)
+      -- schema pipeline: background jobs of the HTTP API; operation: law_ingest | screen | advance | refresh
+      -- status: queued | running | succeeded | failed | interrupted; one active job per dedupe key; kept by step 10
 
 audit_log(id, kind, company_id, update_id, acted_at, table_name, field, row_key, change_kind, old_value, new_value, reason, profile_version, outreach_id, screened_at)
           -- permanent, append-only audit trail (database trigger rejects update and delete; not deleted by step 10). kind: profile_confirmed | profile_changed | email_sent | template_edited. company_id is empty for template edits; outreach_id references the sent-email snapshot; screened_at is set when matching has re-screened a profile change
 
-alert(id, match_id, company_id, status, dismissed_reason, created_at, status_changed_at)
+alert(id, match_id, company_id, status, dismissed_reason, source_snapshot, created_at, status_changed_at)
       -- schema screening; status: new | seen | dismissed | actioned | obsolete; one per relevant match
 
 email_template(id, subject, body, updated_at)
           -- the one fixed template (single row); changed only by a separate, explicit "edit template" action, never by editing an email before sending
 
-outreach(id, alert_id, recipient, delivered_to, subject, sent_body, status, error, provider_message_id, created_at, sent_at, template_updated_at)
+outreach(id, alert_id, company_id, recipient, delivered_to, subject, delivery_subject, sent_body, status, error, provider_message_id, created_at, sent_at, template_updated_at)
          -- status: pending | sent | failed
           -- snapshot of what was really sent: recipient, subject and the exact final text the UI submitted. Stored on every send, so later template changes never alter the history
 
 calendar_event(id, alert_id, outreach_id, company_id, title, due_date, notes, status, created_at, status_changed_at)
-          -- follow-up event created with each successful send; status: open | done | cancelled
+          -- DEFERRED by user decision: this table and workflow are not implemented
 ```
 
 ---
@@ -245,12 +258,38 @@ tests/
 - TODO: **Scan detection threshold** (characters per page).
 - TODO: **Concurrency limit** values (parse, OCR, agents; default 5 each).
 - Done: **Fixtures**: 17 mock data-room PDFs (Nordhafen) in `backend/mock_files/`; `10_seed_nordhafen.sql` is the expected profile.
-- TODO: **Email template**: the one fixed text sent to every client (author, language, subject). The advisor may edit the text per send (decided); TODO: whether edits can be saved back into the template.
+- Done: the fixed German email template is seeded once and can be explicitly edited with audit. Per-send edits never change it. TODO: review wording/signature before live use.
 - Done: `fundstelle` holds filename and page only (no evidence quote).
 - TODO: **Free-text cells in list rows** (Merkmal `kurztext`, `sitz_wohnort`, `anteile`) make rows conflict when documents word them differently; on the mock data most of the 36 review decisions were such wording differences. Decide whether free-text cells should stop counting as a conflict (keep the strongest source's wording) or stay advisor decisions.
 - TODO (steps 8 to 10, details in `Confirm Embed Cleanup Implementation Plan.md`): whether needs-review values need explicit acknowledgement; let the advisor complete skipped list rows and add new rows; how a later DD updates a confirmed profile from documents (manual updates are decided); which tables support ending an entry, whether a reason is mandatory, history inside `profil`; embed `unbekannt` Merkmale (default no); industry (WZ) embedding needs an allowed type in `embedding`; embedding model id, dimension, batch size; statute to tax-type mapping and the `offen` derivation; switch the vector column to `vector(1536)` with HNSW; per-company upload folder for cleanup.
 - TODO (step 0, built; details in `API Upload Implementation Plan.md`): chunked or resumable uploads, adding files to an existing company, cleanup of abandoned uploads; tune the upload limits (placeholders: 50 MB per file, 500 MB total, 300 files) and the global run cap (2); the UI team's dev URL and port for CORS (defaults: localhost 3000 and 5173); whether the UI needs a live per-document "processing" state; server hosting. Live check through HTTP on the Nordhafen mock data: run 82 s for 17 PDFs, 38 decisions, embedding and cleanup in the background in 9 s.
-- TODO (steps 11 to 15, details in `Matching Implementation Plan.md`): the law PDF (user supplies it) and its heading patterns; score threshold and candidate cap (calibrate with `--screen --dry-run`); judge prompt, reasoning effort, features per section; temporal rule (law effective date against open years) and numeric condition rules; whether a norm match bypasses the threshold; real law sources and court rulings (`profil.urteil`) later; `vector(1536)` with HNSW; HTTP endpoints for laws and matches.
-- TODO (steps 16 to 19, details in `Alerts Email Calendar Implementation Plan.md`): review and change the proposed template text, signature, sender name and firm; add the column `ansprechpartner_email` to the teammates' `profil.gesellschaft` (tell them) and a contact email to one fixture; Gmail app password and `MAIL_REDIRECT_TO` for the live check (Gmail API with OAuth later); whether a dismissed alert can be reopened; calendar time of day, reminders and whether `v_fristen` deadlines show in the calendar; follow-up default (7 days); HTTP endpoints for alerts, template, send and calendar.
+- Done (steps 11 to 15): shared structured-output/embedding helpers, atomic PDF ingestion, section vectors, three-stage matching, stored yes/no results, unchanged-pair skipping, `--force`, `--screen-pending` and optional re-screen after updates. Offline and Postgres tests cover the flow. BFH I R 1/23 yields 32 sections from 7 pages (6.0 s). Live check against `Hafenkante-live`: 13 features, 224 surviving pairs, 20 initially judged sections, five stored hits with German reasons (25.7 s, tokens 51,496/7,175). Initial cutoff calibration to 0.54 retains all five hits with 17 candidates; rerun skips all 17 with zero judge tokens. Positive-hit live acceptance passed. Details and score sweep: `backend/mock_laws/README.md`.
+- TODO (steps 11 to 15, details in `Matching Implementation Plan.md`): validate the initial 0.54 cutoff and candidate cap 20 on more labelled source/profile pairs; a single mock case does not establish general accuracy. Further heading layouts, judge wording, reasoning effort and features per section need more examples. Temporal and numeric condition rules, norm threshold bypass, automated sources, `profil.urteil` and `vector(1536)`/HNSW remain deferred. Screening every stored law fails as a whole when one source has vectors of another model or dimension (by design: vectors of different models are never compared); decide whether such sources should be skipped and reported instead.
+- Done (steps 16 to 18): contact field, alerts, fixed template, preview, confirmed log/SMTP sending, snapshots, duplicate protection, recovery and audit (backend services and CLI). HTTP endpoints are built (`fix.md`, 2026-10-17). Remaining TODOs: review text/signature, configure Gmail and own-inbox redirect for the live check, optional client contact fixture/seed, retention, OAuth. Calendar (19), follow-up dates and reminders are deferred completely.
 - Decided: alerts live in our schema `screening` (the teammates' `profil.alert` refers to rulings and has a person column and stays unused).
 - Done: **Single user**: the platform serves one Steuerberater. No login, no users, no person in any call; the audit log records what and when only. Existing code still carries person fields until the change request in `Confirm Embed Cleanup Implementation Plan.md` (section 10) is applied.
+
+Implementation update (2026-10-17, steps 16 to 18): services and CLI implement alerts,
+template preview/edit, confirmed log/SMTP sending, durable pending reservations, retries,
+manual resolution, snapshots and audit. Migrations are `007_contact_email.sql` and
+`008_outreach.sql` because 006 already holds law change summaries. Contact email can be
+edited/cleared through the existing audited profile update; sending a typed address does
+not update the profile or feature vectors. The reset SQL and schema README include the
+nullable column. Teammates may optionally add a client-side address to fixtures/seeds;
+the existing Kanzlei address must remain excluded. Source snapshots preserve history on
+law replacement. Redirect sends retain both submitted and delivery subjects. Uncertain
+SMTP acceptance stays pending. Calendar and all follow-up settings/commands are deferred.
+HTTP endpoints for steps 11 to 18 now exist (see `fix.md`). Gmail credentials and redirect are
+unset, so manual inbox/Sent verification is pending account setup. Review the proposed
+fixed text/signature before live use. Closed alerts cannot reopen; client-end retention,
+OAuth and configurable caps/timeout remain TODOs.
+
+Implementation update (2026-10-17, UI readiness fixes in `fix.md`): all nine findings of
+`UI Backend Readiness Review.md` are fixed: durable cleanup (folder references cleared only
+after verified deletion), visible draft-write failures, persisted background jobs with
+explicit retry and state-selected recovery (no automatic resumption, no LLM call at
+startup), match reconciliation and complete fingerprints with a per-execution judge budget,
+the shared post-update workflow for CLI and HTTP, the full steps 11 to 18 HTTP contract,
+browser-readable errors, and finding norms in the confirmed profile. Migration
+`009_jobs_matching.sql` is additive (jobs, match freshness columns, coverage). The
+contract is `backend/openapi.json`. Calendar stays excluded.

@@ -1,0 +1,26 @@
+{
+  "law": {
+    "kind": "other",
+    "title": "BFH-Urteil vom 16. Juli 2025, I R 1/23 – § 8c KStG und Wirkung auf ein Verlustausgleichsvolumen des Vorjahres",
+    "reference": null,
+    "published_at": null,
+    "effective_at": null,
+    "status": "in_kraft",
+    "legal_forms": [
+      "GmbH"
+    ],
+    "tax_types": [
+      "KSt"
+    ],
+    "summary": "Das Urteil klärt, dass § 8c KStG den Verlustrücktrag negativer Einkünfte aus dem Wirtschaftsjahr eines schädlichen Beteiligungserwerbs in das Vorjahr nicht ausschließt. Diese Einkünfte können mit dem im Vorjahr erzielten positiven Gesamtbetrag der Einkünfte verrechnet werden.",
+    "change_summary": "Der BFH stellt klar, dass § 8c KStG den Verlustrücktrag negativer Einkünfte, die vor dem schädlichen Beteiligungserwerb im selben Wirtschaftsjahr entstanden sind, in das Vorjahr nicht ausschließt. Diese Einkünfte können mit einem im Vorjahr erwirtschafteten positiven Gesamtbetrag der Einkünfte verrechnet werden.",
+    "id": 9,
+    "filename": "BFH-Urteil-I-R-1-23.pdf",
+    "content_hash": "1fa9c885726df14bb826cab678b81f849256a4e701c85a32ea258910b1a7d672",
+    "ingested_at": "2026-10-17T15:45:37.229744Z",
+    "sections": 32
+  },
+  "metadata_input_tokens": 4308,
+  "metadata_output_tokens": 418,
+  "matches_and_vectors_preserved": true
+}

@@ -1,0 +1,41 @@
+{
+  "_comment": "Small schema for unit tests: three scalars, one enum, one list.",
+  "document_classes": {"bescheid": 1, "dd_report": 3, "entwurf": 9},
+  "fields": [
+    {
+      "name": "company_name",
+      "type": "string",
+      "description": "Full registered name of the company under review, including the legal form suffix."
+    },
+    {
+      "name": "legal_form",
+      "type": "enum",
+      "enum": ["GmbH", "AG", "KG", "other"],
+      "description": "Legal form of the company under review."
+    },
+    {
+      "name": "employees",
+      "type": "integer",
+      "unit": "persons",
+      "description": "Number of employees at the end of the latest fiscal year (head count)."
+    },
+    {
+      "name": "annual_revenue_eur",
+      "type": "number",
+      "unit": "EUR",
+      "description": "Revenue (Umsatzerlöse) for the latest fiscal year, in EUR."
+    },
+    {
+      "name": "steuerattribut",
+      "type": "list",
+      "table": "steuerattribut",
+      "key": ["art", "stichtag"],
+      "description": "Tax loss carryforwards per reporting date.",
+      "items": [
+        {"name": "art", "type": "enum", "enum": ["kst_verlustvortrag", "gewst_fehlbetrag"], "required": true, "description": "Kind."},
+        {"name": "stichtag", "type": "date", "required": true, "description": "Reporting date."},
+        {"name": "betrag_eur", "type": "number", "unit": "EUR", "required": true, "description": "Amount in EUR."}
+      ]
+    }
+  ]
+}

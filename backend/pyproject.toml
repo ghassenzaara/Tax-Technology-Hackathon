@@ -1,0 +1,43 @@
+[project]
+name = "dd-monitor-backend"
+version = "0.1.0"
+description = "DD regulatory monitoring: document parsing, extraction agents, profile merge"
+readme = "README.md"
+# TODO: confirm Python version with the team (pinned to 3.12 in .python-version).
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143.3",
+    "openai>=3.0",
+    "openpyxl>=3.1",
+    "pdfplumber>=0.11",
+    "pillow>=10.4",
+    "psycopg-pool>=3.2",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "pypdfium2>=4.30",
+    "python-multipart>=0.0.32",
+    "tenacity>=9.0",
+    "uvicorn>=0.30",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "reportlab>=4.2",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

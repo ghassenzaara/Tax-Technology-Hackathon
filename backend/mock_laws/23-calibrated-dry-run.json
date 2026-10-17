@@ -1,0 +1,27 @@
+{
+  "screen": [
+    {
+      "company_id": "Hafenkante-live",
+      "dry_run": true,
+      "trigger": "law",
+      "features": 13,
+      "sections": 32,
+      "removed": {
+        "legal_form": 0,
+        "tax_type": 192
+      },
+      "pairs": 224,
+      "candidates": 17,
+      "skipped": 0,
+      "judged": 0,
+      "hits": 0,
+      "stored": 0,
+      "unjudged": [],
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "seconds": 0.060371900000973255,
+      "status": "screened",
+      "message": null
+    }
+  ]
+}
