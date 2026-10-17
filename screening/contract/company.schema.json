@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "company.schema.json",
+  "title": "Company (client)",
+  "description": "Thin fixed core plus open facts. Never hardcode fact labels in consumers.",
+  "type": "object",
+  "required": ["id", "advisorId", "name", "status", "createdAt", "updatedAt", "contact", "facts"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/id" },
+    "advisorId": { "$ref": "common.schema.json#/$defs/id" },
+    "name": { "type": "string", "minLength": 1 },
+    "status": { "description": "Known: draft, active, archived.", "type": "string" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "updatedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "confirmedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "confirmedBy": { "$ref": "common.schema.json#/$defs/id" },
+    "lastDdAt": { "description": "Date of the last DD.", "$ref": "common.schema.json#/$defs/date" },
+    "contact": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "salutation": { "description": "Known: Herr, Frau. Optional.", "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" }
+      }
+    },
+    "customerNumber": { "type": "string" },
+    "clientSince": { "type": "string" },
+    "legalForm": { "type": "string" },
+    "industry": { "type": "string" },
+    "facts": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/fact" } },
+    "extra": { "$ref": "common.schema.json#/$defs/extra" },
+    "notes": { "type": "string" }
+  }
+}

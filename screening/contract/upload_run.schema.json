@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "upload_run.schema.json",
+  "title": "Upload run",
+  "description": "Progress of one document processing run. Status vocabularies follow UI.md; unknown values render as text.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "companyId", "status", "startedAt", "documents"],
+  "properties": {
+    "schemaVersion": { "$ref": "common.schema.json#/$defs/schemaVersion" },
+    "id": { "$ref": "common.schema.json#/$defs/id" },
+    "companyId": { "$ref": "common.schema.json#/$defs/id" },
+    "status": { "description": "Known: running, finished, failed.", "type": "string" },
+    "startedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "finishedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "relativePath", "parsingStatus", "extractionStatus"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/id" },
+          "relativePath": { "type": "string" },
+          "sizeBytes": { "type": "integer", "minimum": 0 },
+          "fileType": { "description": "Known: text_pdf, scanned_pdf, excel, unsupported.", "type": "string" },
+          "parsingStatus": { "description": "Known: ok, partial, failed, unsupported.", "type": "string" },
+          "extractionStatus": { "description": "Known: pending, ok, partial, failed, skipped, write_failed.", "type": "string" },
+          "warnings": { "type": "array", "items": { "type": "string" } },
+          "error": { "$ref": "common.schema.json#/$defs/error" }
+        }
+      }
+    }
+  }
+}

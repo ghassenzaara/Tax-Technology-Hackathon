@@ -1,0 +1,183 @@
+{
+  "schemaVersion": "0.1.0",
+  "items": [
+    {
+      "id": "cmp-7f3a01",
+      "advisorId": "adv-001",
+      "name": "Beispiel GmbH",
+      "status": "active",
+      "createdAt": "2026-10-02T08:30:00Z",
+      "updatedAt": "2026-10-15T14:10:00Z",
+      "confirmedAt": "2026-10-03T10:00:00Z",
+      "confirmedBy": "adv-001",
+      "lastDdAt": "2026-09-12",
+      "contact": { "salutation": "Herr", "name": "Max Mustermann", "email": "max.mustermann@beispiel-gmbh.example", "phone": "+49 89 123456-0" },
+      "customerNumber": "10023",
+      "clientSince": "2019",
+      "legalForm": "GmbH",
+      "industry": "Handel",
+      "facts": [
+        { "id": "c1-f01", "group": "Stammdaten", "label": "Adresse", "value": "Musterstraße 1, 80331 München", "type": "string", "sources": [{ "filename": "Handelsregisterauszug.pdf", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c1-f02", "group": "Stammdaten", "label": "Gründungsdatum", "value": "2011-03-01", "type": "date", "code": "A02", "sources": [{ "filename": "Handelsregisterauszug.pdf", "page": 1 }, { "filename": "DD Tax Bericht 2026.pdf", "page": 4 }], "reviewStatus": "confirmed" },
+        { "id": "c1-f03", "group": "Kennzahlen", "label": "Umsatzerlöse 2025", "value": 12500000, "type": "number", "unit": "EUR", "code": "B01", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 7 }, { "filename": "DD Tax Bericht 2026.pdf", "page": 12 }], "reviewStatus": "confirmed" },
+        { "id": "c1-f04", "group": "Kennzahlen", "label": "Mitarbeiter (Durchschnitt)", "value": 85, "type": "integer", "code": "B02", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 18 }], "reviewStatus": "single_source" },
+        { "id": "c1-f05", "group": "Umsatzsteuer", "label": "Innergemeinschaftliche Lieferungen", "value": true, "type": "boolean", "code": "U03", "sources": [{ "filename": "Umsatzsteuererklärung 2025.pdf", "page": 2 }], "reviewStatus": "single_source" },
+        { "id": "c1-f06", "group": "Umsatzsteuer", "label": "Ausgangsrechnungen elektronisch", "value": "nein", "type": "enum", "enumValues": ["ja", "nein", "unbekannt"], "code": "U07", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 21 }], "reviewStatus": "single_source" },
+        { "id": "c1-f07", "group": "Umsatzsteuer", "label": "Umsatzsteuerliche Organschaft", "value": false, "type": "boolean", "code": "U01", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 19 }], "reviewStatus": "single_source" },
+        { "id": "c1-f08", "group": "Ertragsteuern", "label": "Wirtschaftsjahr", "value": "Kalenderjahr", "type": "string", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 3 }], "reviewStatus": "single_source" }
+      ],
+      "extra": {},
+      "notes": "Geschäftsführer bevorzugt Termine am Vormittag."
+    },
+    {
+      "id": "cmp-2b9c44",
+      "advisorId": "adv-001",
+      "name": "Müller & Partner KG",
+      "status": "active",
+      "createdAt": "2026-09-03T09:00:00Z",
+      "updatedAt": "2026-10-12T11:20:00Z",
+      "confirmedAt": "2026-09-05T16:45:00Z",
+      "confirmedBy": "adv-001",
+      "lastDdAt": "2026-09-03",
+      "contact": { "salutation": "Frau", "name": "Anna Müller", "email": "a.mueller@mueller-partner.example", "phone": "+49 40 987654-21" },
+      "customerNumber": "10031",
+      "clientSince": "2021",
+      "legalForm": "KG",
+      "industry": "Dienstleistungen",
+      "facts": [
+        { "id": "c2-f01", "group": "Stammdaten", "label": "Adresse", "value": "Hafenstraße 12, 20457 Hamburg", "type": "string", "sources": [{ "filename": "Handelsregister KG.pdf", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c2-f02", "group": "Stammdaten", "label": "Registergericht", "value": "Amtsgericht Hamburg, HRA 123456", "type": "string", "sources": [{ "filename": "Handelsregister KG.pdf", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c2-f03", "group": "Stammdaten", "label": "Gründungsdatum", "value": "2004-07-15", "type": "date", "sources": [{ "filename": "Gesellschaftsvertrag.pdf", "page": 1 }, { "filename": "Handelsregister KG.pdf", "page": 1 }], "reviewStatus": "confirmed" },
+        { "id": "c2-f04", "group": "Stammdaten", "label": "Komplementärin", "value": "Müller Verwaltungs GmbH", "type": "string", "sources": [{ "filename": "Gesellschaftsvertrag.pdf", "page": 2 }], "reviewStatus": "single_source" },
+        { "id": "c2-f05", "group": "Kennzahlen", "label": "Umsatzerlöse 2025", "value": 48300000, "type": "number", "unit": "EUR", "code": "B01", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 6 }, { "filename": "BWA Dezember 2025.xlsx", "page": 1 }], "reviewStatus": "confirmed" },
+        { "id": "c2-f06", "group": "Kennzahlen", "label": "Bilanzsumme 2025", "value": 31750000.5, "type": "number", "unit": "EUR", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 4 }], "reviewStatus": "single_source" },
+        { "id": "c2-f07", "group": "Kennzahlen", "label": "Mitarbeiter (Durchschnitt)", "value": 240, "type": "integer", "code": "B02", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 22 }], "reviewStatus": "single_source" },
+        { "id": "c2-f08", "group": "Kennzahlen", "label": "EBITDA 2025", "value": 6100000, "type": "number", "unit": "EUR", "sources": [{ "filename": "BWA Dezember 2025.xlsx", "page": 2 }], "reviewStatus": "single_source" },
+        { "id": "c2-f09", "group": "Kennzahlen", "label": "Zinsaufwand netto 2025", "value": 2450000, "type": "number", "unit": "EUR", "code": "Z01", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 9 }], "reviewStatus": "single_source" },
+        { "id": "c2-f10", "group": "Gesellschafter", "label": "Gesellschafter", "type": "list", "value": [
+          { "Name": "Müller Verwaltungs GmbH", "Rolle": "Komplementärin", "Anteil": "0 %" },
+          { "Name": "Anna Müller", "Rolle": "Kommanditistin", "Anteil": "55 %" },
+          { "Name": "Peter Partner", "Rolle": "Kommanditist", "Anteil": "45 %" }
+        ], "sources": [{ "filename": "Gesellschaftsvertrag.pdf", "page": 3 }], "reviewStatus": "single_source" },
+        { "id": "c2-f11", "group": "Organschaft", "label": "Organträger", "value": true, "type": "boolean", "code": "O01", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 15 }], "reviewStatus": "single_source" },
+        { "id": "c2-f12", "group": "Organschaft", "label": "Organgesellschaften", "type": "list", "value": [
+          { "Gesellschaft": "Müller Logistik GmbH", "Beteiligung": "100 %", "EAV seit": "2018-01-01", "Art": "körperschaft- und gewerbesteuerlich" },
+          { "Gesellschaft": "Partner IT Services GmbH", "Beteiligung": "51 %", "EAV seit": "2022-01-01", "Art": "körperschaft- und gewerbesteuerlich" }
+        ], "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 15 }, { "filename": "Ergebnisabführungsverträge.pdf", "page": 2 }], "reviewStatus": "confirmed" },
+        { "id": "c2-f13", "group": "Organschaft", "label": "Finanzielle Eingliederung über Mitunternehmerschaft", "value": "ja", "type": "enum", "enumValues": ["ja", "nein", "unbekannt"], "code": "O04", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 16 }], "reviewStatus": "single_source" },
+        { "id": "c2-f14", "group": "Verlustvorträge", "label": "Verlustvorträge", "type": "list", "value": [
+          { "Steuerart": "Gewerbesteuer", "Betrag": 1850000, "Stichtag": "2025-12-31" },
+          { "Steuerart": "Einkommensteuer (§ 15a EStG)", "Betrag": 420000, "Stichtag": "2025-12-31" }
+        ], "sources": [{ "filename": "Steuerbescheide 2024.pdf", "page": 3 }], "reviewStatus": "single_source" },
+        { "id": "c2-f15", "group": "Darlehen", "label": "Darlehen", "type": "list", "value": [
+          { "Gläubiger": "Hausbank AG (Beispiel)", "Betrag": 18000000, "Zins": "4,1 %", "Laufzeit bis": "2031-06-30" },
+          { "Gläubiger": "Anna Müller (Gesellschafterdarlehen)", "Betrag": 2500000, "Zins": "6,0 %", "Laufzeit bis": "2028-12-31" }
+        ], "sources": [{ "filename": "Darlehensverträge.pdf", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c2-f16", "group": "Umsatzsteuer", "label": "Innergemeinschaftliche Leistungen", "value": true, "type": "boolean", "code": "U03", "sources": [{ "filename": "Umsatzsteuererklärung 2025.pdf", "page": 2 }], "reviewStatus": "single_source" },
+        { "id": "c2-f17", "group": "Umsatzsteuer", "label": "Ausgangsrechnungen elektronisch", "value": "teilweise", "type": "enum", "enumValues": ["ja", "nein", "teilweise", "unbekannt"], "code": "U07", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 23 }], "reviewStatus": "single_source" },
+        { "id": "c2-f18", "group": "Umsatzsteuer", "label": "Rechnungsempfang über Portal", "value": "nein", "type": "enum", "enumValues": ["ja", "nein", "unbekannt"], "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 23 }], "reviewStatus": "single_source" },
+        { "id": "c2-f19", "group": "Ertragsteuern", "label": "Gewerbesteuer Hebesatz", "value": 470, "type": "integer", "unit": "%", "sources": [{ "filename": "Steuerbescheide 2024.pdf", "page": 5 }], "reviewStatus": "single_source" },
+        { "id": "c2-f20", "group": "Ertragsteuern", "label": "Thesaurierungsbegünstigung genutzt", "value": false, "type": "boolean", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 18 }], "reviewStatus": "single_source" },
+        { "id": "c2-f21", "group": "Ertragsteuern", "label": "Letzte Betriebsprüfung", "value": "2019 bis 2021, abgeschlossen 2024", "type": "string", "sources": [{ "filename": "Betriebsprüfungsbericht.pdf", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c2-f22", "group": "Risiken", "label": "Offene Risiken aus der DD", "type": "list", "value": [
+          { "Thema": "Verrechnungspreise IT Services", "Einschätzung": "mittel" },
+          { "Thema": "Gesellschafterdarlehen Zinshöhe", "Einschätzung": "gering" }
+        ], "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 30 }], "reviewStatus": "single_source" },
+        { "id": "c2-f23", "group": "Beteiligungen", "label": "Auslandsbeteiligungen", "value": ["Partner Services s.r.o. (CZ)"], "type": "list", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 8 }], "reviewStatus": "single_source" },
+        { "id": "c2-f24", "group": "Stammdaten", "label": "Wirtschaftsjahr", "value": "Kalenderjahr", "type": "string", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 2 }], "reviewStatus": "single_source" },
+        { "id": "c2-f25", "group": "Stammdaten", "label": "Website", "value": "www.mueller-partner.example", "type": "string", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 2 }], "reviewStatus": "single_source" }
+      ],
+      "extra": { "Mandatsart": "Laufende Beratung angefragt", "Konzernstruktur": "Organkreis mit zwei Töchtern" },
+      "notes": ""
+    },
+    {
+      "id": "cmp-c81d02",
+      "advisorId": "adv-001",
+      "name": "Schneider Bau GmbH & Co. KG",
+      "status": "active",
+      "createdAt": "2026-08-28T07:45:00Z",
+      "updatedAt": "2026-10-14T09:05:00Z",
+      "confirmedAt": "2026-08-29T12:00:00Z",
+      "confirmedBy": "adv-001",
+      "lastDdAt": "2026-08-28",
+      "contact": { "salutation": "Herr", "name": "Jonas Schneider", "phone": "+49 711 445566" },
+      "customerNumber": "10047",
+      "clientSince": "2024",
+      "legalForm": "GmbH & Co. KG",
+      "industry": "Bau",
+      "facts": [
+        { "id": "c3-f01", "group": "Stammdaten", "label": "Adresse", "value": "Industriestraße 8, 70565 Stuttgart", "type": "string", "sources": [{ "filename": "Handelsregister.pdf", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c3-f02", "group": "Kennzahlen", "label": "Umsatzerlöse 2025", "value": 27400000, "type": "number", "unit": "EUR", "code": "B01", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 5 }], "reviewStatus": "single_source" },
+        { "id": "c3-f03", "group": "Kennzahlen", "label": "Mitarbeiter (Durchschnitt)", "value": 160, "type": "integer", "code": "B02", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 14 }], "reviewStatus": "single_source" },
+        { "id": "c3-f04", "group": "Kennzahlen", "label": "Zinsaufwand netto 2025", "value": 3400000, "type": "number", "unit": "EUR", "code": "Z01", "sources": [{ "filename": "Jahresabschluss 2025.pdf", "page": 8 }], "reviewStatus": "single_source" },
+        { "id": "c3-f05", "group": "Umsatzsteuer", "label": "Erbringt Bauleistungen (Reverse Charge)", "value": true, "type": "boolean", "code": "U05", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 11 }], "reviewStatus": "single_source" },
+        { "id": "c3-f06", "group": "Umsatzsteuer", "label": "Freistellungsbescheinigung Bauabzug gültig bis", "value": "2027-03-31", "type": "date", "sources": [{ "filename": "Freistellungsbescheinigung.pdf", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c3-f07", "group": "Umsatzsteuer", "label": "Ausgangsrechnungen elektronisch", "value": "unbekannt", "type": "enum", "enumValues": ["ja", "nein", "unbekannt"], "code": "U07", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 12 }], "reviewStatus": "single_source" }
+      ],
+      "extra": { "Hinweis": "Kontakt nur telefonisch, E-Mail Adresse fehlt" },
+      "notes": ""
+    },
+    {
+      "id": "cmp-e5506b",
+      "advisorId": "adv-001",
+      "name": "Hoffmann Consulting UG (haftungsbeschränkt)",
+      "status": "active",
+      "createdAt": "2026-10-09T13:00:00Z",
+      "updatedAt": "2026-10-09T15:30:00Z",
+      "confirmedAt": "2026-10-09T15:30:00Z",
+      "confirmedBy": "adv-001",
+      "lastDdAt": "2026-08-15",
+      "contact": { "salutation": "Frau", "name": "Lena Hoffmann", "email": "lena@hoffmann-consulting.example" },
+      "customerNumber": "10052",
+      "clientSince": "2026",
+      "legalForm": "UG",
+      "industry": "Beratung",
+      "facts": [
+        { "id": "c4-f01", "group": "Stammdaten", "label": "Adresse", "value": "Am Markt 3, 04109 Leipzig", "type": "string", "sources": [{ "filename": "Handelsregister.pdf", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c4-f02", "group": "Kennzahlen", "label": "Umsatzerlöse 2025", "value": 310000, "type": "number", "unit": "EUR", "code": "B01", "sources": [{ "filename": "EÜR 2025.xlsx", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c4-f03", "group": "Umsatzsteuer", "label": "Kleinunternehmerregelung", "value": false, "type": "boolean", "sources": [{ "filename": "Umsatzsteuererklärung 2025.pdf", "page": 1 }], "reviewStatus": "single_source" }
+      ],
+      "extra": {},
+      "notes": ""
+    },
+    {
+      "id": "cmp-9a17ff",
+      "advisorId": "adv-001",
+      "name": "Nordlicht Immobilien AG",
+      "status": "active",
+      "createdAt": "2026-07-20T10:00:00Z",
+      "updatedAt": "2026-10-16T08:00:00Z",
+      "confirmedAt": "2026-07-22T09:30:00Z",
+      "confirmedBy": "adv-001",
+      "lastDdAt": "2026-07-20",
+      "contact": { "name": "Dr. Kim Larsen", "email": "k.larsen@nordlicht-immobilien.example", "phone": "+49 431 777000" },
+      "customerNumber": "10019",
+      "clientSince": "2020",
+      "legalForm": "AG",
+      "industry": "Immobilien",
+      "facts": [
+        { "id": "c5-f01", "group": "Stammdaten", "label": "Adresse", "value": "Kaistraße 101, 24114 Kiel", "type": "string", "sources": [{ "filename": "Handelsregister AG.pdf", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c5-f02", "group": "Kennzahlen", "label": "Mieterlöse 2025", "value": 19800000, "type": "number", "unit": "EUR", "code": "B01", "sources": [{ "filename": "Konzernabschluss 2025.pdf", "page": 11 }, { "filename": "Mieterliste 2025.xlsx", "page": 1 }], "reviewStatus": "confirmed" },
+        { "id": "c5-f03", "group": "Kennzahlen", "label": "Zinsaufwand netto 2025", "value": 7900000, "type": "number", "unit": "EUR", "code": "Z01", "sources": [{ "filename": "Konzernabschluss 2025.pdf", "page": 14 }], "reviewStatus": "single_source" },
+        { "id": "c5-f04", "group": "Gewerbesteuer", "label": "Erweiterte Kürzung beantragt", "value": true, "type": "boolean", "code": "G03", "sources": [{ "filename": "Gewerbesteuerbescheid 2024.pdf", "page": 2 }], "reviewStatus": "single_source" },
+        { "id": "c5-f05", "group": "Grundbesitz", "label": "Objekte", "type": "list", "value": [
+          { "Objekt": "Bürohaus Kiellinie", "Nutzung": "Büro", "Fläche m²": 12400, "Photovoltaik": "ja" },
+          { "Objekt": "Wohnanlage Holtenau", "Nutzung": "Wohnen", "Fläche m²": 8650, "Photovoltaik": "nein" },
+          { "Objekt": "Logistikhalle Neumünster", "Nutzung": "Gewerbe", "Fläche m²": 21000, "Photovoltaik": "ja" }
+        ], "sources": [{ "filename": "Objektliste.xlsx", "page": 1 }], "reviewStatus": "single_source" },
+        { "id": "c5-f06", "group": "Umsatzsteuer", "label": "Option zur Umsatzsteuer bei Vermietung", "value": "teilweise", "type": "enum", "enumValues": ["ja", "nein", "teilweise"], "code": "U09", "sources": [{ "filename": "DD Tax Bericht 2026.pdf", "page": 17 }], "reviewStatus": "single_source" },
+        { "id": "c5-f07", "group": "Grundbesitz", "label": "Hauptstandort Koordinaten", "value": { "lat": 54.3233, "lon": 10.1394 }, "type": "geo_point", "sources": [{ "filename": "Objektliste.xlsx", "page": 2 }], "reviewStatus": "single_source" }
+      ],
+      "extra": {
+        "nachhaltigkeitsbericht": {
+          "berichtsjahr": 2025,
+          "standard": "ESRS",
+          "kennzahlen": { "co2Tonnen": 1840, "anteilGruenstrom": "62 %" },
+          "geprueft": false
+        },
+        "boersennotiert": false
+      },
+      "notes": "Vorstand plant Verkauf der Wohnanlage 2027."
+    }
+  ]
+}

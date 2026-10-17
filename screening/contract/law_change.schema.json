@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "law_change.schema.json",
+  "title": "Law change",
+  "description": "Output of the screening loop. One record per source item; a new content hash raises the version.",
+  "type": "object",
+  "required": ["id", "title", "sourceType", "sourceName", "url", "publishedAt", "detectedAt", "version", "contentHash", "sections", "blocks"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/id" },
+    "title": { "type": "string" },
+    "sourceType": { "description": "Known: gesetzentwurf, bmf_schreiben, gesetz, urteil.", "type": "string" },
+    "sourceName": { "description": "For example BMF, BFH, Bundestag.", "type": "string" },
+    "url": { "type": "string" },
+    "publishedAt": { "$ref": "common.schema.json#/$defs/date" },
+    "effectiveAt": { "$ref": "common.schema.json#/$defs/date" },
+    "detectedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "version": { "type": "integer", "minimum": 1 },
+    "contentHash": { "type": "string" },
+    "tags": {
+      "description": "Structured hints for the rule filter. All optional.",
+      "type": "object",
+      "properties": {
+        "taxTypes": { "type": "array", "items": { "type": "string" } },
+        "legalForms": { "type": "array", "items": { "type": "string" } },
+        "industries": { "type": "array", "items": { "type": "string" } },
+        "norms": { "type": "array", "items": { "type": "string" } },
+        "thresholds": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "ref", "text"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/id" },
+          "ref": { "type": "string" },
+          "heading": { "type": "string" },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "blocks": {
+      "description": "Detail page content, rendered generically. Known kinds: summary, changes, impact, next_steps.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "title"],
+        "properties": {
+          "kind": { "type": "string" },
+          "title": { "type": "string" },
+          "text": { "type": "string" },
+          "items": { "type": "array", "items": { "type": "string" } },
+          "generated": { "description": "True when written by an LLM.", "type": "boolean" }
+        }
+      }
+    },
+    "extra": { "$ref": "common.schema.json#/$defs/extra" }
+  }
+}

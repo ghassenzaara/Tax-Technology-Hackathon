@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audit_entry.schema.json",
+  "title": "Audit entry",
+  "description": "Append-only history entry shown in the Verlauf panel.",
+  "type": "object",
+  "required": ["id", "companyId", "kind", "actedBy", "actedAt"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/id" },
+    "companyId": { "$ref": "common.schema.json#/$defs/id" },
+    "kind": {
+      "description": "Known: profile_confirmed, profile_changed, match_review_changed, email_sent, note_changed, documents_added.",
+      "type": "string"
+    },
+    "actedBy": { "$ref": "common.schema.json#/$defs/id" },
+    "actedAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "field": { "type": "string" },
+    "oldValue": {},
+    "newValue": {},
+    "matchId": { "$ref": "common.schema.json#/$defs/id" },
+    "outreachId": { "$ref": "common.schema.json#/$defs/id" },
+    "summary": { "type": "string" }
+  }
+}

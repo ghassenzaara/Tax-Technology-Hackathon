@@ -1,0 +1,207 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-ink: #0f172a;
+  --color-ink-muted: #475569;
+  --color-ink-subtle: #64748b;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
+
+  --color-primary: #1d4ed8;
+  --color-primary-hover: #1e40af;
+  --color-primary-soft: #eff4ff;
+
+  --color-sidebar: #0f1b2d;
+  --color-sidebar-hover: #1a2a42;
+  --color-sidebar-active: #22344f;
+  --color-sidebar-ink: #cbd5e1;
+
+  --color-success: #15803d;
+  --color-success-soft: #e8f6ee;
+  --color-warning: #b45309;
+  --color-warning-soft: #fdf3e2;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fdecec;
+  --color-info: #1d4ed8;
+  --color-info-soft: #eaf1fe;
+  --color-neutral-soft: #eef2f6;
+
+  /* Motion tokens (Emil Kowalski): strong ease-out for UI, drawer curve for sheets. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans text-[15px] leading-normal;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary;
+  }
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+  /* Every clickable thing fades its colors on hover instead of switching instantly.
+     Component utilities (pressable, nudge) add their own transform on top. */
+  a,
+  button,
+  summary,
+  label,
+  [role='tab'],
+  [role='option'] {
+    transition-property: color, background-color, border-color, text-decoration-color, box-shadow, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: ease;
+  }
+}
+
+/* Press feedback plus color fades. Transform uses the strong ease-out, colors use ease. */
+@utility pressable {
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+  &:active:not(:disabled):not([aria-disabled='true']) {
+    transform: scale(0.97);
+  }
+}
+
+/* Primary actions and clickable cards rise 1px on hover. Only with a real pointer. */
+@utility hover-lift {
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+  @media (hover: hover) and (pointer: fine) {
+    &:hover:not(:disabled):not([aria-disabled='true']) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px -6px rgb(15 23 42 / 0.22);
+    }
+  }
+  &:active:not(:disabled):not([aria-disabled='true']) {
+    transform: scale(0.97);
+  }
+}
+
+/* Arrows and chevrons inside a `group` move 2px in their direction on hover. */
+@utility nudge {
+  transition: transform 200ms var(--ease-out);
+  @media (hover: hover) and (pointer: fine) {
+    :where(.group):hover & {
+      transform: translateX(2px);
+    }
+  }
+}
+@utility nudge-back {
+  transition: transform 200ms var(--ease-out);
+  @media (hover: hover) and (pointer: fine) {
+    :where(.group):hover & {
+      transform: translateX(-2px);
+    }
+  }
+}
+
+/* Underline fades in on hover instead of popping. */
+@utility link-underline {
+  text-decoration-line: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      text-decoration-color: currentColor;
+    }
+  }
+  &:focus-visible {
+    text-decoration-color: currentColor;
+  }
+}
+
+/* Dialog enter and exit. Modal scales from center, sheet slides from the right. */
+.app-dialog {
+  opacity: 0;
+  transition-property: opacity, transform, overlay, display;
+  transition-duration: 200ms;
+  transition-timing-function: var(--ease-out);
+  transition-behavior: allow-discrete;
+}
+.app-dialog-modal {
+  transform: scale(0.96);
+}
+.app-dialog-sheet {
+  transform: translateX(100%);
+  transition-duration: 260ms;
+  transition-timing-function: var(--ease-drawer);
+}
+.app-dialog[open] {
+  opacity: 1;
+  transform: none;
+  @starting-style {
+    opacity: 0;
+  }
+}
+.app-dialog-modal[open] {
+  @starting-style {
+    transform: scale(0.96);
+  }
+}
+.app-dialog-sheet[open] {
+  @starting-style {
+    transform: translateX(100%);
+  }
+}
+.app-dialog::backdrop {
+  opacity: 0;
+  transition: opacity 200ms ease, overlay 200ms allow-discrete, display 200ms allow-discrete;
+}
+.app-dialog[open]::backdrop {
+  opacity: 1;
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+/* Select menu pop-in: scales from its trigger edge. */
+.menu-pop {
+  transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/* Reduced motion: fewer and gentler. Movement goes, color and opacity fades stay. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .pressable:active,
+  .hover-lift:hover,
+  .hover-lift:active,
+  .nudge,
+  .nudge-back,
+  .app-dialog,
+  .app-dialog[open],
+  .menu-pop {
+    transform: none !important;
+  }
+  [data-motion='slide'] {
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "0.1.0",
+  "items": [
+    {
+      "id": "out-001",
+      "companyId": "cmp-2b9c44",
+      "matchIds": ["m-08", "m-10"],
+      "recipient": "a.mueller@mueller-partner.example",
+      "subject": "Gesprächsangebot zu aktuellen regulatorischen Entwicklungen",
+      "body": "Sehr geehrte Frau Müller,\n\nwir verfolgen für unsere Mandanten laufend die aktuellen regulatorischen Entwicklungen. Dabei sind uns Änderungen aufgefallen, die für Ihr Unternehmen von Bedeutung sein könnten.\n\nGerne besprechen wir mit Ihnen in einem persönlichen Gespräch, ob und wie Ihr Unternehmen betroffen ist. Bitte teilen Sie uns mit, wann ein Termin für Sie passt.\n\nMit freundlichen Grüßen\nMax Schmidt\nSteuerberater\nSchmidt Steuerberatung (Beispielkanzlei)",
+      "sentAt": "2026-10-12T11:20:00Z",
+      "sentBy": "adv-001",
+      "providerMessageId": "mock-msg-0001"
+    },
+    {
+      "id": "out-002",
+      "companyId": "cmp-9a17ff",
+      "matchIds": ["m-04"],
+      "recipient": "k.larsen@nordlicht-immobilien.example",
+      "subject": "Gesprächsangebot zu aktuellen regulatorischen Entwicklungen",
+      "body": "Guten Tag Dr. Kim Larsen,\n\nwir verfolgen für unsere Mandanten laufend die aktuellen regulatorischen Entwicklungen. Dabei sind uns Änderungen aufgefallen, die für Ihr Unternehmen von Bedeutung sein könnten.\n\nGerne besprechen wir mit Ihnen in einem persönlichen Gespräch, ob und wie Ihr Unternehmen betroffen ist. Bitte teilen Sie uns mit, wann ein Termin für Sie passt.\n\nMit freundlichen Grüßen\nMax Schmidt\nSteuerberater\nSchmidt Steuerberatung (Beispielkanzlei)",
+      "sentAt": "2026-10-16T10:20:00Z",
+      "sentBy": "adv-001",
+      "providerMessageId": "mock-msg-0002"
+    },
+    {
+      "id": "out-003",
+      "companyId": "cmp-c81d02",
+      "matchIds": ["m-11"],
+      "recipient": "info@schneider-bau.example",
+      "subject": "Gesprächsangebot zu aktuellen regulatorischen Entwicklungen",
+      "body": "Sehr geehrter Herr Schneider,\n\nwir verfolgen für unsere Mandanten laufend die aktuellen regulatorischen Entwicklungen. Dabei sind uns Änderungen aufgefallen, die für Ihr Unternehmen von Bedeutung sein könnten.\n\nGerne besprechen wir mit Ihnen in einem persönlichen Gespräch, ob und wie Ihr Unternehmen betroffen ist. Bitte teilen Sie uns mit, wann ein Termin für Sie passt.\n\nMit freundlichen Grüßen\nMax Schmidt\nSteuerberater\nSchmidt Steuerberatung (Beispielkanzlei)",
+      "sentAt": "2026-10-11T08:30:00Z",
+      "sentBy": "adv-001",
+      "providerMessageId": "mock-msg-0003"
+    },
+    {
+      "id": "out-004",
+      "companyId": "cmp-7f3a01",
+      "matchIds": ["m-01"],
+      "recipient": "max.mustermann@beispiel-gmbh.example",
+      "subject": "Gesprächsangebot zu aktuellen regulatorischen Entwicklungen",
+      "body": "Sehr geehrter Herr Mustermann,\n\nwir verfolgen für unsere Mandanten laufend die aktuellen regulatorischen Entwicklungen. Dabei sind uns Änderungen aufgefallen, die für Ihr Unternehmen von Bedeutung sein könnten.\n\nGerne besprechen wir mit Ihnen in einem persönlichen Gespräch, ob und wie Ihr Unternehmen betroffen ist. Bitte teilen Sie uns mit, wann ein Termin für Sie passt.\n\nMit freundlichen Grüßen\nMax Schmidt\nSteuerberater\nSchmidt Steuerberatung (Beispielkanzlei)",
+      "sentAt": "2026-10-16T07:40:00Z",
+      "sentBy": "adv-001",
+      "providerMessageId": "mock-msg-0004"
+    }
+  ]
+}

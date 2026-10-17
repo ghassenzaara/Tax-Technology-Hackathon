@@ -1,12 +1,10 @@
 # UI integration guide
 
-For the UI team. This lists the features the UI must have and the constraints it must follow so it integrates smoothly with the backend. Exact data shapes (including the profile draft) come from the API: `backend/openapi.json` (on the `backend` branch) is the generated OpenAPI contract you can build mocks and types from; a running server also serves it at `/openapi.json` and interactive docs at `/docs`. Section 3 lists the calls.
+For the UI team. This lists the features the UI must have and the constraints it must follow so it integrates smoothly with the backend. Exact data shapes (including the profile draft) will come from the database schema and the API once they are pushed; this file does not define them.
 
 **Backend status:**
-- Built: the HTTP API and upload layer (step 0), document parsing, one extraction agent per document, the merge into a profile draft (steps 1 to 7), advisor confirmation, updating a confirmed profile with the audit log, embeddings and cleanup (steps 8 to 10). Everything in sections 1 to 5 can be built against the real API now.
-- Planned (plan written, not built yet): law ingestion from one law PDF and the three-stage matching (steps 11 to 15). No law fetching; the backend takes a hand-picked PDF. Match results (law section, matched feature, direction, reason) will be listed per company; endpoints are not specified yet.
-- Planned (plan written, not built yet): alerts, the one fixed email template with preview and edit, sending through Gmail, and a follow-up calendar (steps 16 to 19). What the UI will need: an alert list with status (new, seen, dismissed, actioned), an alert detail (law section, matched feature, reason), an email screen that shows the template text, subject and recipient, all editable before sending, with an "are you sure" step, a template-edit screen, a sent-mail history and a calendar list. The recipient is pre-filled from the new profile field *client contact email*; when the profile has none, the screen shows "no email address found" and the advisor types one. Endpoints are not specified yet.
-- Anything below marked *proposed* is final only after the backend team confirms it.
+- Built: document parsing (reading the uploaded PDF and Excel files).
+- Planned, not built yet: extraction, merge, the API. Anything below marked *proposed* is final only after the backend team confirms it.
 - No authentication in the prototype. Use mock data only, no real client data.
 
 Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section 1.
@@ -17,7 +15,7 @@ Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section
 2. **Progress:** while the backend works, show one row per document with its status and warnings. Failed, skipped and unsupported files stay visible after the run.
 3. **Profile review (step 8):** the advisor checks the company profile before it is saved:
    - see every profile field with its value, or its candidate values when documents disagree;
-   - see the source of every value (filename, page, evidence quote) while reviewing;
+   - see the source of every value (filename, page, evidence quote);
    - resolve conflicts by picking a candidate or typing their own value;
    - fill in or deliberately leave empty any field where nothing was found;
    - see which values need review;
@@ -39,10 +37,10 @@ Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section
 3. **Values are validated by the backend before saving.** Show its error messages next to the fields; do not assume your own validation is enough.
 
 **Sources and review**
-4. **Always show the source of a value.** While reviewing (step 8): filename, page and evidence quote. After the profile is confirmed: filename and page only, because the evidence quote is removed (step 10) and the documents are deleted. The advisor uses filename and page to re-check a doubtful value in their own copy of the documents. No value is displayed without a source. For an Excel file the page is the sheet's position in the workbook.
+4. **Always show the source of a value:** filename, page and evidence quote. No value is displayed without it. For an Excel file the page is the sheet's position in the workbook.
 5. **Show review flags.** Values from scanned pages (OCR) or with unverified evidence are marked needs-review. Make that visible.
 6. **Evidence quotes are untrusted text from documents.** Render them as plain text, never as HTML or markdown.
-7. **No "open original document".** Raw documents are deleted after processing. During review show the quote and page number; on a confirmed profile show filename and page only. A confirmed profile has no conflict alternatives either: only the chosen value and its source.
+7. **No "open original document".** Raw documents are deleted after processing; show the quote and page number only.
 
 **Conflicts and confirmation**
 8. **Never pre-select a value for a conflict.** If the backend sends a suggestion, it is a hint only; the advisor has to choose.
@@ -59,7 +57,7 @@ Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section
 13. **Unknown values must not crash the UI.** If the backend sends a status or type you do not know, show it as plain text.
 
 **Technical**
-14. **IDs are opaque strings.** Do not parse or build them. `company_id` identifies one client company and tags all its data so clients never mix. In the database it is the deal's project name (`profil.deal.projektname`; the CLI defaults it to the folder name). The backend creates it at upload (from the optional project name the UI sends, made unique) and returns it; the UI sends it on every later call.
+14. **IDs are opaque strings.** Do not parse or build them. `company_id` identifies one client company and tags all its data so clients never mix; *proposed:* the backend creates it at upload and returns it, and the UI sends it on every later call.
 15. **Upload limits:** supported files are PDF, xlsx and xlsm. Everything else is accepted but reported as unsupported. Size limit per file is 50 MB (placeholder). Do not block the upload on file type; let the backend report it.
 16. **Progress by polling** every 1 to 2 seconds while a run is active (`run.state` `queued` or `running`), and after Confirm until the project state is `cleaned` (or `last_error` is set). No websockets.
 17. **Errors** arrive as an object with a machine-readable code and a human-readable message. Show the message.

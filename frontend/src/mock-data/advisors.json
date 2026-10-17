@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "0.1.0",
+  "items": [
+    {
+      "id": "adv-001",
+      "name": "Max Schmidt",
+      "salutation": "Herr",
+      "title": "Steuerberater",
+      "firm": "Schmidt Steuerberatung (Beispielkanzlei)",
+      "seenLawChangeIds": ["law-004", "law-005", "law-006"]
+    }
+  ]
+}
