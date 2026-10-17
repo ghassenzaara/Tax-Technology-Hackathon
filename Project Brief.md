@@ -12,6 +12,7 @@ Diagram: `Project Diagram.mmd`. Use these step numbers when referring to a part 
 
 | # | Step | Phase (diagram) | Status |
 |---|---|---|---|
+| 0 | Upload the DD folder: HTTP API and upload layer (receive files, store per company, create the company id, start the run, progress and review endpoints) | 1. Upload | Planned |
 | 1 | Discover files in the uploaded DD folder | 2. Document processing | Built |
 | 2 | Classify each file: text PDF, scanned PDF, Excel, unsupported | 2. Document processing | Built |
 | 3 | Parse in parallel: pdfplumber (text PDF), GPT vision to markdown (scan), openpyxl (Excel) | 2. Document processing | Built |
@@ -19,9 +20,9 @@ Diagram: `Project Diagram.mmd`. Use these step numbers when referring to a part 
 | 5 | One sub agent per document, same prompt and schema, run in parallel | 2. Document processing | Built |
 | 6 | Per-document JSON, validated with Pydantic and written as candidate rows | 2. Document processing | Built |
 | 7 | Merge into a profile draft plus conflicts | 3. Company profile | Built |
-| 8 | Advisor reviews and confirms the profile | 3. Company profile | Not started |
-| 9 | Turn each feature into a descriptive sentence, embed it, store the vectors | 3. Company profile | Not started |
-| 10 | Delete raw documents, scan markdown, candidate rows and evidence quotes | 3. Company profile | Not started |
+| 8 | Advisor reviews and confirms the profile; later the advisor can update entries (audit log kept, vectors refreshed) | 3. Company profile | Planned |
+| 9 | Turn each feature into a descriptive sentence, embed it, store the vectors | 3. Company profile | Planned |
+| 10 | Delete raw documents, scan markdown, candidate rows, drafts | 3. Company profile | Planned |
 | 11 | Fetch new and upcoming laws | 4. Screening loop | Not started |
 | 12 | Split laws into sections and embed each section | 4. Screening loop | Not started |
 | 13 | Stage 1: rule filter on structured fields | 4. Screening loop | Not started |
@@ -32,7 +33,9 @@ Diagram: `Project Diagram.mmd`. Use these step numbers when referring to a part 
 | 18 | Advisor confirms, email is sent | 5. Notify and reach out | Not started |
 | 19 | Add event to the in-app calendar | 5. Notify and reach out | Not started |
 
-Before step 1: the advisor uploads the DD folder in the UI (teammate). Contract clause about saving the profile is a pitch point only (no code).
+Step 0: the UI (teammates) sends the folder; our backend receives it through the HTTP API and upload layer, planned in `API Upload Implementation Plan.md`. The API holds no business logic: it calls the services of the other steps. Contract clause about saving the profile is a pitch point only (no code).
+
+**Ownership.** Steps 11 and 12 (fetch laws, split and embed sections) are handled by teammates, who are still searching for resources; the backend only needs their output (stored law sections with vectors). Our team owns steps 0 to 10, 13 to 15 (matching) and the backend logic of steps 16 to 19 (section 2.6). The frontend, the fixtures and the DB schema `profil` come from teammates.
 
 ---
 
@@ -50,8 +53,9 @@ Before step 1: the advisor uploads the DD folder in the UI (teammate). Contract 
 ### 2.2 Company profile
 - **The profile fields are predefined by a teammate** and delivered as a schema (JSON Schema / Pydantic model). The pipeline must load that schema as input and must not hardcode fields.
 - The advisor confirms the profile once (protects against LLM hallucinations).
+- **The advisor can update entries after confirmation** (facts change, mistakes are found): edit, add, remove or end an entry by hand. Every change is validated, stamped as entered by the advisor, recorded in the permanent audit log (who, when, old value, new value), and the affected feature vectors are refreshed. The audit log also records confirmations, email sends and template edits, so several advisors can work on the same data and anyone can see who changed what. There is no undo: the UI asks "are you sure" before saving, and a mistake is corrected by a new update. It does not rerun extraction and needs no documents. Updating a confirmed profile from the documents of a new DD is still open.
 - After the profile is built, extracted and embedded, everything else is deleted: raw DD documents, scan markdown, and candidate rows. Only the profile and its feature vectors are kept (also keeps the DB small).
-- **Sources after confirmation:** every profile value keeps a citation of filename and page (plus document class, title and date through `dokument`), so the advisor can check a doubtful value in the documents they still hold. The evidence quote and the conflict alternatives exist only while the draft is being reviewed (step 8); step 10 removes quotes from `fundstelle` (they are text copied from confidential documents) and deletes the candidate rows. No document viewer after confirmation.
+- **Sources after confirmation:** every profile value keeps a citation of filename and page (plus document class, title and date through `dokument`), so the advisor can check a doubtful value in the documents they still hold. The evidence quote and the conflict alternatives exist only while the draft is being reviewed (step 8); the publish step never writes the quote into `profil` (`fundstelle` holds filename and page only), and step 10 deletes the candidate rows and drafts where the quotes live. No document viewer after confirmation.
 - Security, AVV and scalability are out of scope for now. The prototype uses mock data only. Revisit later.
 
 ### 2.3 Company embeddings: a set of vectors per company
@@ -62,6 +66,7 @@ Before step 1: the advisor uploads the DD folder in the UI (teammate). Contract 
 - Storage, one row per feature: `company_id, feature_type, text, vector`.
 
 ### 2.4 Law ingestion
+- Owned by teammates (steps 11 and 12); resources are still being searched. We consume the result.
 - Sources (start with 2 or 3, add more later): BMF-Schreiben, NeuRIS / rechtsinformationen.bund.de, Bundestag DIP, EUR-Lex / Cellar SPARQL, later BFH rulings and BGBl.
 - Split each law into **sections** and embed each section separately.
 
@@ -74,9 +79,11 @@ Every hit is stored as `(company_id, feature_id, law_section_id, score, judge_re
 
 ### 2.6 Notify and reach out
 - Alert shows: law section, matched feature, reason.
-- The email is **one fixed template, the same for every client**. It is not drafted by an LLM and not tailored to the company or the law. Only the recipient (the client's contact) differs. The advisor sees the template text and **can edit it before sending**; an edit applies only to that one email, the stored template stays unchanged. The advisor then confirms and sends.
+- The email is **one fixed template, the same for every client**. It is not drafted by an LLM and not tailored to the company or the law. Only the recipient (the client's contact) differs. The advisor sees the template text and **can edit it before sending**; an edit applies only to that one email, the stored template stays unchanged. The advisor then confirms and sends. **The send request carries the final recipient, subject and text from the UI; the backend sends exactly that** (not the stored template), validates it (non-empty, valid address) and stores it as a snapshot in `outreach`. The stored template is changed only through a separate explicit "edit template" action. The recipient can be changed per send as well.
 - On confirm: send the email and create a calendar event in the app.
+- **Audit:** every email send and every template edit writes an audit entry (who, when); the sent email itself is the `outreach` snapshot.
 - Human in the loop is mandatory (the advisor stays responsible for the advice).
+- **Split between backend and frontend (steps 16 to 19).** The frontend only displays and collects input. The backend owns the logic: step 16 stores each alert (match, law section, matched feature, reason, status new/seen/dismissed/actioned) and serves the alert list; step 17 stores the one email template, fills in the recipient and serves the preview text; step 18 accepts the advisor's confirmation with the optional edited text, sends the email through the mail provider (Gmail or Outlook API, or SMTP for the prototype) and records it in `outreach`; step 19 stores the calendar event and serves the calendar list. Needed inputs that do not exist yet: the client contact's email address (not in the `profil` schema; TODO: where it comes from), the sender account, the template text.
 
 ---
 
@@ -100,8 +107,14 @@ matches(id, company_id, feature_id, law_section_id, score,
         judge_relevant, judge_reason, status, created_at)
         -- status: new | drafted | sent | dismissed
 
-outreach(id, match_id, template_id, edited_body, sent_at, calendar_event_id)
-          -- the email text lives once in the template; edited_body is set only when the advisor changed the text for this send (null = template sent unchanged)
+audit_log(id, kind, company_id, update_id, acted_by, acted_at, table_name, field, row_key, change_kind, old_value, new_value, reason, profile_version, outreach_id, screened_at)
+          -- permanent, append-only audit trail (database trigger rejects update and delete; not deleted by step 10). kind: profile_confirmed | profile_changed | email_sent | template_edited. company_id is empty for template edits; outreach_id references the sent-email snapshot; screened_at is set when matching has re-screened a profile change
+
+email_template(id, subject, body, updated_at, updated_by)
+          -- the one fixed template; changed only by a separate, explicit "edit template" action, never by editing an email before sending
+
+outreach(id, match_id, template_id, recipient, subject, sent_body, sent_by, sent_at, calendar_event_id)
+          -- snapshot of what was really sent: recipient, subject and the exact final text the UI submitted. Stored on every send, so later template changes never alter the history
 ```
 
 ---
@@ -110,7 +123,7 @@ outreach(id, match_id, template_id, edited_body, sent_at, calendar_event_id)
 
 | Layer | Option |
 |---|---|
-| Backend | Python, FastAPI |
+| Backend | Python, FastAPI (HTTP API and upload layer in `API Upload Implementation Plan.md`) |
 | Parsing | pdfplumber (text PDFs), GPT 6-Luna vision to markdown (scans), pandas/openpyxl (Excel) |
 | Agents | OpenAI `gpt-6-luna` (1M context), parallel calls with asyncio, one per document, structured output validated with Pydantic |
 | Package manager | uv |
@@ -119,7 +132,7 @@ outreach(id, match_id, template_id, edited_body, sent_at, calendar_event_id)
 | Embeddings | Multilingual model that handles German legal text well |
 | Scheduler | Cron / APScheduler for the screening loop |
 | Email + calendar | Gmail / Outlook API, in-app calendar table |
-| Frontend | Dashboard: clients, alerts, email confirm and edit, calendar |
+| Frontend | Dashboard: clients, profile view and update, audit log, alerts, email confirm and edit, calendar |
 | Hosting | EU only, AVV with every provider (DD data is confidential) |
 
 ---
@@ -225,4 +238,7 @@ tests/
 - TODO: **Concurrency limit** values (parse, OCR, agents; default 5 each).
 - Done: **Fixtures**: 17 mock data-room PDFs (Nordhafen) in `backend/mock_files/`; `10_seed_nordhafen.sql` is the expected profile.
 - TODO: **Email template**: the one fixed text sent to every client (author, language, subject). The advisor may edit the text per send (decided); TODO: whether edits can be saved back into the template.
-- TODO: step 10 must strip the evidence quote from `fundstelle` (the writer currently stores `where: quote[:200]`, `profil_writer.py:367`) and keep only filename and page.
+- TODO: the writer currently stores `where: quote[:200]` in `fundstelle` (`profil_writer.py`); step 8 work changes it to filename and page only.
+- TODO (steps 8 to 10, details in `Confirm Embed Cleanup Implementation Plan.md`): whether needs-review values need explicit acknowledgement; let the advisor complete skipped list rows and add new rows; real user identity (login) for confirm, update, email send, template edit and the audit log (several advisors work on the same data); how a later DD updates a confirmed profile from documents (manual updates are decided); which tables support ending an entry, whether a reason is mandatory, history inside `profil`; embed `unbekannt` Merkmale (default no); industry (WZ) embedding needs an allowed type in `embedding`; embedding model id, dimension, batch size; statute to tax-type mapping and the `offen` derivation; switch the vector column to `vector(1536)` with HNSW; per-company upload folder for cleanup.
+- TODO (step 0, details in `API Upload Implementation Plan.md`): authentication and advisor identity; chunked or resumable uploads and adding files to an existing company; upload limits and the global run cap; the UI team's dev URL and port for CORS; whether the UI needs a live per-document "processing" state; server hosting.
+- TODO (steps 16 to 19): the client contact's email address (source), the sender account and mail provider, the calendar event fields.

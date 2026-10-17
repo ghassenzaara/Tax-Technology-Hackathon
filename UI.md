@@ -1,10 +1,12 @@
 # UI integration guide
 
-For the UI team. This lists the features the UI must have and the constraints it must follow so it integrates smoothly with the backend. Exact data shapes (including the profile draft) will come from the database schema and the API once they are pushed; this file does not define them.
+For the UI team. This lists the features the UI must have and the constraints it must follow so it integrates smoothly with the backend. Exact data shapes (including the profile draft) will come from the API once it is built: the backend will publish an OpenAPI file (`openapi.json`) you can generate mocks and types from. This file does not define the shapes.
 
 **Backend status:**
 - Built: document parsing, one extraction agent per document, and the merge into a profile draft (steps 1 to 7). The draft can be published into the database schema `profil` as unconfirmed rows.
-- Not built yet: advisor confirmation (step 8), embeddings, laws, matching, alerts, email, and the HTTP API. Anything below marked *proposed* is final only after the backend team confirms it.
+- Planned (plans written, not built yet): the HTTP API and upload layer, advisor confirmation, updating a confirmed profile, embeddings and cleanup (steps 0 and 8 to 10).
+- Not planned in detail yet: laws, matching, alerts, email sending, calendar (steps 11 to 19). Law fetching is handled by another team.
+- Anything below marked *proposed* is final only after the backend team confirms it.
 - No authentication in the prototype. Use mock data only, no real client data.
 
 Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section 1.
@@ -20,7 +22,14 @@ Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section
    - fill in or deliberately leave empty any field where nothing was found;
    - see which values need review;
    - confirm the profile with one action.
-4. **Later (not specified yet):** alerts with the matched feature and law section, an email confirm-and-edit screen, in-app calendar. The email starts from **one fixed template, the same for every client**, not drafted per company or law; only the recipient differs. The screen shows the template text, the advisor **can edit it before sending** (the edit applies to that one email only, the template stays unchanged) and confirms to send.
+4. **Client list and confirmed profile:** list the companies with their state, and show a confirmed profile with each value's citation (filename and page; for values the advisor typed: "entered by the advisor" and the date).
+5. **Update entries (after confirmation):** the advisor can change a confirmed profile at any time, without a new review:
+   - edit a value, edit cells of a list row, add a new row, remove a row that was a mistake, or end an entry that is no longer valid (an end date instead of deleting, so the history stays);
+   - optionally give a reason for the change;
+   - go through the flow Update entries, type the new values, review a summary, an extra "are you sure" step, then save (there is no undo; a mistake is corrected by a new update);
+   - see the audit log: who changed what and when (field, old value, new value, reason), plus confirmations, sent emails and template edits;
+   - see a hint "embeddings stale" while the backend refreshes the search data after a change.
+6. **Later (not specified yet):** alerts with the matched feature and law section, an email confirm-and-edit screen, in-app calendar. The email starts from **one fixed template, the same for every client**, not drafted per company or law. The screen shows the template text; the advisor **can edit text, subject and recipient before sending**. The backend sends exactly what the UI submits and stores every sent email (edited or not) as a snapshot with the acting person; sends and template edits also appear in the audit log. Editing one email never changes the template; the template changes only through a separate explicit "edit template" screen.
 
 ## 2. Constraints the UI must follow
 
@@ -49,12 +58,22 @@ Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section
 13. **Unknown values must not crash the UI.** If the backend sends a status or type you do not know, show it as plain text.
 
 **Technical**
-14. **IDs are opaque strings.** Do not parse or build them. `company_id` identifies one client company and tags all its data so clients never mix. In the database it is the deal's project name (`profil.deal.projektname`; the CLI defaults it to the folder name). *Proposed:* the upload step returns it and the UI sends it on every later call. Who creates it at upload is still open.
+14. **IDs are opaque strings.** Do not parse or build them. `company_id` identifies one client company and tags all its data so clients never mix. In the database it is the deal's project name (`profil.deal.projektname`; the CLI defaults it to the folder name). The backend creates it at upload (from the optional project name the UI sends, made unique) and returns it; the UI sends it on every later call.
 15. **Upload limits:** supported files are PDF, xlsx and xlsm. Everything else is accepted but reported as unsupported. Size limit per file is 50 MB (placeholder). Do not block the upload on file type; let the backend report it.
 16. **Progress by polling** every 1 to 2 seconds while a run is active (*proposed*). No websockets needed.
 17. **Errors** arrive as an object with a machine-readable code and a human-readable message. Show the message.
 18. **CORS:** tell the backend team your dev URL and port so the backend allows it.
 19. **Language:** documents are German. Quotes and extracted text values are shown exactly as in the document. The UI language is your decision.
+
+**Confirmed profile, updates and email**
+20. **Profile version.** The confirmed profile has a version number (starts at 1, +1 per update). Send the version you saw with every update; if the backend answers "stale profile", reload and let the advisor redo the change.
+21. **Update rules.** Required fields cannot be emptied. Values typed by the advisor are validated like any other (type, enum values, length, date format); show the per-field messages. An update is refused before the profile is confirmed, while the company is busy (confirm, embedding or cleanup is running), or when the version is stale; the error codes tell these apart.
+22. **Advisor-entered values.** After an update the citation of a changed value is "entered by the advisor" with the date, not a filename. Do not invent a document source for it.
+23. **Project state vocabulary:** published (draft saved, waiting for review), confirmed, embedded, cleaned; plus the flag "embeddings stale". Show them as plain status text.
+24. **Confirm before saving an update.** Show a summary of the changes and an explicit "are you sure" step before calling Update. There is no undo; the advisor corrects a mistake with a new update.
+25. **Email.** Send the final recipient, subject and text from the screen; the backend sends exactly that and never the stored template. Show the template text as the starting point only. Never write edits back to the template from the email screen.
+
+26. **Acting person.** Every call that changes data (confirm, update, send email, edit template) carries the name of the acting advisor, and the audit log shows it. There is no login yet, so the name is typed or chosen; when login arrives the backend takes the identity from it and the field goes away. Several advisors may work on the same profile: expect "stale" and "busy" errors and reload.
 
 ## 3. Proposed calls (names only, shapes to follow)
 
@@ -62,11 +81,19 @@ Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section
 |---|---|
 | Upload | Send the files of the folder; returns the company id and the accepted and rejected files. |
 | Progress | Run state plus a status record per document. |
+| Rerun | Re-process the stored files of a company (before confirmation only). |
 | Draft | The profile draft for review. Available when the run is finished. |
-| Confirm | The advisor's final choice per field. Saves the confirmed profile. |
+| Confirm | The advisor's final choice per field, with the draft version. Saves the confirmed profile; embedding and cleanup then run in the background. |
+| Update | Changes to a confirmed profile, with the profile version, the person's name and an optional reason. |
+| Audit | The audit log, filterable by company, kind, person and date, newest first. |
+| Companies | The client list with name, state and timestamps. |
+| Profile | The confirmed profile with citations and its version. |
+| Reserved | Alerts, calendar, and the email calls (template read and edit, preview, send) come with steps 16 to 19. |
+
+Error codes you can switch on (names may change, the list will be in the OpenAPI file): wrong state, busy, stale draft (reload the draft), stale profile (reload the profile), validation (with per-field details).
 
 ## 4. Working without the backend
 
-Mock the responses until the backend exists. Cover at least these cases: all four field statuses, a conflict with three candidates, a group that differs only by rounding, a needs-review value from a scanned page, a failed document, a skipped document and an unsupported file.
+Mock the responses until the backend exists. Cover at least these cases: all four field statuses, a conflict with three candidates, a group that differs only by rounding, a needs-review value from a scanned page, a failed document, a skipped document and an unsupported file. After the backend exists also cover: a confirmed profile with an advisor-entered value, a stale draft error, a stale profile error, a busy error and the "embeddings stale" hint.
 
 If a constraint here blocks you or looks wrong, tell the backend team before building around it. Any change will be made in this file first.
