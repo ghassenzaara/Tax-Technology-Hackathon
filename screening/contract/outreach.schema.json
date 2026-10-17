@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "outreach.schema.json",
+  "title": "Outreach",
+  "description": "Snapshot of one sent email, per client. Status per law stays in the match.",
+  "type": "object",
+  "required": ["id", "companyId", "matchIds", "recipient", "subject", "body", "sentAt", "sentBy"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/id" },
+    "companyId": { "$ref": "common.schema.json#/$defs/id" },
+    "matchIds": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/id" } },
+    "recipient": { "type": "string" },
+    "subject": { "type": "string" },
+    "body": { "description": "Exact sent text.", "type": "string" },
+    "sentAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "sentBy": { "$ref": "common.schema.json#/$defs/id" },
+    "providerMessageId": { "type": "string" }
+  }
+}

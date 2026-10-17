@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "profile_draft.schema.json",
+  "title": "Profile draft",
+  "description": "The merged draft the advisor reviews before confirming. Facts may carry candidates (conflict) and quotes.",
+  "type": "object",
+  "required": ["schemaVersion", "companyId", "runId", "facts"],
+  "properties": {
+    "schemaVersion": { "$ref": "common.schema.json#/$defs/schemaVersion" },
+    "companyId": { "$ref": "common.schema.json#/$defs/id" },
+    "runId": { "$ref": "common.schema.json#/$defs/id" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/dateTime" },
+    "facts": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/fact" } }
+  }
+}

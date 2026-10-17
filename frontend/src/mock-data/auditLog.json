@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "0.1.0",
+  "items": [
+    { "id": "aud-001", "companyId": "cmp-9a17ff", "kind": "profile_confirmed", "actedBy": "adv-001", "actedAt": "2026-07-22T09:30:00Z", "summary": "Profil bestätigt" },
+    { "id": "aud-002", "companyId": "cmp-9a17ff", "kind": "match_review_changed", "actedBy": "adv-001", "actedAt": "2026-07-10T11:00:00Z", "matchId": "m-13", "field": "emailStatus", "oldValue": "not_sent", "newValue": "discussed" },
+    { "id": "aud-003", "companyId": "cmp-c81d02", "kind": "profile_confirmed", "actedBy": "adv-001", "actedAt": "2026-08-29T12:00:00Z", "summary": "Profil bestätigt" },
+    { "id": "aud-004", "companyId": "cmp-c81d02", "kind": "email_sent", "actedBy": "adv-001", "actedAt": "2026-10-11T08:30:00Z", "outreachId": "out-003", "summary": "E-Mail an info@schneider-bau.example gesendet" },
+    { "id": "aud-005", "companyId": "cmp-c81d02", "kind": "profile_changed", "actedBy": "adv-001", "actedAt": "2026-10-13T14:30:00Z", "field": "contact.email", "oldValue": "info@schneider-bau.example", "newValue": null, "summary": "E-Mail Adresse ist nicht mehr gültig" },
+    { "id": "aud-006", "companyId": "cmp-c81d02", "kind": "match_review_changed", "actedBy": "adv-001", "actedAt": "2026-10-14T09:05:00Z", "matchId": "m-12", "field": "emailStatus", "oldValue": "not_sent", "newValue": "discussed" },
+    { "id": "aud-007", "companyId": "cmp-2b9c44", "kind": "profile_confirmed", "actedBy": "adv-001", "actedAt": "2026-09-05T16:45:00Z", "summary": "Profil bestätigt" },
+    { "id": "aud-008", "companyId": "cmp-2b9c44", "kind": "email_sent", "actedBy": "adv-001", "actedAt": "2026-10-12T11:20:00Z", "outreachId": "out-001", "summary": "E-Mail an a.mueller@mueller-partner.example gesendet" },
+    { "id": "aud-009", "companyId": "cmp-7f3a01", "kind": "profile_confirmed", "actedBy": "adv-001", "actedAt": "2026-10-03T10:00:00Z", "summary": "Profil bestätigt" },
+    { "id": "aud-010", "companyId": "cmp-7f3a01", "kind": "email_sent", "actedBy": "adv-001", "actedAt": "2026-10-16T07:40:00Z", "outreachId": "out-004", "summary": "E-Mail an max.mustermann@beispiel-gmbh.example gesendet" },
+    { "id": "aud-011", "companyId": "cmp-7f3a01", "kind": "match_review_changed", "actedBy": "adv-001", "actedAt": "2026-10-16T15:00:00Z", "matchId": "m-01", "field": "emailStatus", "oldValue": "sent", "newValue": "discussed" },
+    { "id": "aud-012", "companyId": "cmp-e5506b", "kind": "profile_confirmed", "actedBy": "adv-001", "actedAt": "2026-10-09T15:30:00Z", "summary": "Profil bestätigt" },
+    { "id": "aud-013", "companyId": "cmp-9a17ff", "kind": "email_sent", "actedBy": "adv-001", "actedAt": "2026-10-16T10:20:00Z", "outreachId": "out-002", "summary": "E-Mail an k.larsen@nordlicht-immobilien.example gesendet" }
+  ]
+}

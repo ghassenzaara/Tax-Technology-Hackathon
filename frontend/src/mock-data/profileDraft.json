@@ -1,0 +1,286 @@
+{
+  "schemaVersion": "0.1.0",
+  "companyId": "cmp-draft-demo",
+  "runId": "run-upl-demo",
+  "createdAt": "2026-10-17T09:01:24Z",
+  "facts": [
+    {
+      "id": "d-f01",
+      "group": "Stammdaten",
+      "label": "Firma",
+      "type": "string",
+      "value": "Alpenblick Handels GmbH",
+      "sources": [
+        {
+          "filename": "DD Tax Bericht 2026.pdf",
+          "page": 1,
+          "quote": "Zielgesellschaft: Alpenblick Handels GmbH, Rosenheim"
+        },
+        {
+          "filename": "Jahresabschluss 2025.pdf",
+          "page": 1,
+          "quote": "Jahresabschluss der Alpenblick Handels GmbH zum 31.12.2025"
+        }
+      ],
+      "reviewStatus": "confirmed",
+      "reasoning": "Name in zwei Dokumenten identisch.",
+      "coreField": "name"
+    },
+    {
+      "id": "d-f02",
+      "group": "Stammdaten",
+      "label": "Rechtsform",
+      "type": "enum",
+      "enumValues": [
+        "GmbH",
+        "UG",
+        "AG",
+        "KG",
+        "GmbH & Co. KG",
+        "OHG",
+        "Einzelunternehmen"
+      ],
+      "value": "GmbH",
+      "sources": [
+        {
+          "filename": "Jahresabschluss 2025.pdf",
+          "page": 1,
+          "quote": "Alpenblick Handels GmbH"
+        }
+      ],
+      "reviewStatus": "single_source",
+      "reasoning": "Aus dem Firmennamen abgeleitet.",
+      "coreField": "legalForm"
+    },
+    {
+      "id": "d-f03",
+      "group": "Stammdaten",
+      "label": "Sitz",
+      "type": "string",
+      "value": "Rosenheim",
+      "sources": [
+        {
+          "filename": "DD Tax Bericht 2026.pdf",
+          "page": 1,
+          "quote": "Alpenblick Handels GmbH, Rosenheim"
+        }
+      ],
+      "reviewStatus": "single_source"
+    },
+    {
+      "id": "d-f11",
+      "group": "Stammdaten",
+      "label": "Branche",
+      "type": "string",
+      "value": "Großhandel",
+      "coreField": "industry",
+      "sources": [
+        {
+          "filename": "DD Tax Bericht 2026.pdf",
+          "page": 2,
+          "quote": "Gegenstand des Unternehmens ist der Großhandel mit Haushaltswaren."
+        }
+      ],
+      "reviewStatus": "single_source",
+      "reasoning": "Aus dem Unternehmensgegenstand abgeleitet."
+    },
+    {
+      "id": "d-f04",
+      "group": "Kennzahlen",
+      "label": "Umsatzerlöse 2025",
+      "type": "number",
+      "unit": "EUR",
+      "value": 12480000,
+      "sources": [
+        {
+          "filename": "Jahresabschluss 2025.pdf",
+          "page": 7,
+          "quote": "Umsatzerlöse 12.480.000,00 EUR"
+        },
+        {
+          "filename": "BWA 2025.xlsx",
+          "page": 1,
+          "quote": "Erlöse gesamt 12.480 TEUR"
+        }
+      ],
+      "alternatives": [
+        {
+          "value": 12500000,
+          "sources": [
+            {
+              "filename": "DD Tax Bericht 2026.pdf",
+              "page": 12,
+              "quote": "Umsatz von rund 12,5 Mio. EUR"
+            }
+          ]
+        }
+      ],
+      "reviewStatus": "confirmed",
+      "reasoning": "Drei Werte, die sich nur durch Rundung unterscheiden."
+    },
+    {
+      "id": "d-f05",
+      "group": "Kennzahlen",
+      "label": "Mitarbeiter (Durchschnitt)",
+      "type": "integer",
+      "sources": [],
+      "reviewStatus": "conflict",
+      "candidates": [
+        {
+          "id": "d-f05-c1",
+          "value": 85,
+          "sources": [
+            {
+              "filename": "Jahresabschluss 2025.pdf",
+              "page": 18,
+              "quote": "Im Jahresdurchschnitt waren 85 Arbeitnehmer beschäftigt."
+            }
+          ]
+        },
+        {
+          "id": "d-f05-c2",
+          "value": 92,
+          "sources": [
+            {
+              "filename": "DD Tax Bericht 2026.pdf",
+              "page": 6,
+              "quote": "Die Gesellschaft beschäftigt derzeit 92 Mitarbeiter."
+            }
+          ]
+        },
+        {
+          "id": "d-f05-c3",
+          "value": 78,
+          "sources": [
+            {
+              "filename": "BWA 2025.xlsx",
+              "page": 3,
+              "quote": "Personal (Köpfe): 78"
+            }
+          ]
+        }
+      ],
+      "reasoning": "Drei Dokumente nennen unterschiedliche Werte, eventuell verschiedene Stichtage."
+    },
+    {
+      "id": "d-f06",
+      "group": "Ertragsteuern",
+      "label": "Gewerbesteuerlicher Verlustvortrag",
+      "type": "number",
+      "unit": "EUR",
+      "value": 318000,
+      "sources": [
+        {
+          "filename": "Steuerbescheide 2024 (Scan).pdf",
+          "page": 3,
+          "quote": "vortragsfähiger Gewerbeverlust 318.000 €"
+        }
+      ],
+      "reviewStatus": "single_source",
+      "needsReview": true,
+      "reviewReason": "Wert stammt von einer gescannten Seite (Texterkennung).",
+      "reasoning": "Aus dem Bescheid über den vortragsfähigen Gewerbeverlust."
+    },
+    {
+      "id": "d-f07",
+      "group": "Umsatzsteuer",
+      "label": "Umsatzsteuerliche Organschaft",
+      "type": "boolean",
+      "sources": [],
+      "reviewStatus": "missing",
+      "reasoning": "In keinem Dokument gefunden."
+    },
+    {
+      "id": "d-f08",
+      "group": "Umsatzsteuer",
+      "label": "Innergemeinschaftliche Lieferungen",
+      "type": "boolean",
+      "value": true,
+      "sources": [
+        {
+          "filename": "DD Tax Bericht 2026.pdf",
+          "page": 19,
+          "quote": "Lieferungen an Abnehmer in Österreich und Italien"
+        }
+      ],
+      "reviewStatus": "single_source"
+    },
+    {
+      "id": "d-f09",
+      "group": "Gesellschafter",
+      "label": "Gesellschafter",
+      "type": "list",
+      "value": [
+        {
+          "Name": "Thomas Berger",
+          "Anteil": "60 %"
+        },
+        {
+          "Name": "Berger Holding GmbH",
+          "Anteil": "40 %"
+        }
+      ],
+      "sources": [
+        {
+          "filename": "DD Tax Bericht 2026.pdf",
+          "page": 3,
+          "quote": "Gesellschafter: Thomas Berger (60 %), Berger Holding GmbH (40 %)"
+        }
+      ],
+      "reviewStatus": "single_source"
+    },
+    {
+      "id": "d-f10",
+      "group": "Stammdaten",
+      "label": "Gründungsdatum",
+      "type": "date",
+      "sources": [],
+      "reviewStatus": "missing",
+      "reasoning": "Gesellschaftsvertrag konnte nicht ausgewertet werden."
+    },
+    {
+      "id": "d-f12",
+      "group": "Ansprechpartner",
+      "label": "Anrede",
+      "type": "enum",
+      "enumValues": [
+        "Herr",
+        "Frau"
+      ],
+      "coreField": "contact.salutation",
+      "sources": [],
+      "reviewStatus": "missing",
+      "reasoning": "Kontaktdaten stehen in DD Unterlagen meist nicht. Bitte ergänzen."
+    },
+    {
+      "id": "d-f13",
+      "group": "Ansprechpartner",
+      "label": "Name",
+      "type": "string",
+      "coreField": "contact.name",
+      "sources": [],
+      "reviewStatus": "missing",
+      "reasoning": "Kontaktdaten stehen in DD Unterlagen meist nicht. Bitte ergänzen."
+    },
+    {
+      "id": "d-f14",
+      "group": "Ansprechpartner",
+      "label": "E-Mail",
+      "type": "string",
+      "coreField": "contact.email",
+      "sources": [],
+      "reviewStatus": "missing",
+      "reasoning": "Kontaktdaten stehen in DD Unterlagen meist nicht. Bitte ergänzen."
+    },
+    {
+      "id": "d-f15",
+      "group": "Ansprechpartner",
+      "label": "Telefon",
+      "type": "string",
+      "coreField": "contact.phone",
+      "sources": [],
+      "reviewStatus": "missing",
+      "reasoning": "Kontaktdaten stehen in DD Unterlagen meist nicht. Bitte ergänzen."
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "0.1.0",
+  "runId": "run-2026-10-16",
+  "generatedAt": "2026-10-16T05:12:00Z",
+  "items": [
+    {
+      "id": "law-001",
+      "title": "Entwurf Jahressteuergesetz 2026",
+      "sourceType": "gesetzentwurf",
+      "sourceName": "Bundestag",
+      "url": "https://dip.bundestag.de/",
+      "publishedAt": "2026-09-24",
+      "effectiveAt": "2027-01-01",
+      "detectedAt": "2026-09-25T05:10:00Z",
+      "version": 2,
+      "contentHash": "sha256:1a0c9e7d4b2f",
+      "tags": { "taxTypes": ["Körperschaftsteuer", "Einkommensteuer", "Umsatzsteuer"], "legalForms": [], "industries": [], "norms": ["§ 8b KStG", "§ 4h EStG"] },
+      "sections": [
+        { "id": "law-001-s1", "ref": "Art. 1 Nr. 3", "heading": "Abzugsbeschränkung für Finanzierungsaufwendungen", "text": "Die Freigrenze für den Zinssaldo wird angepasst. Für konzernzugehörige Unternehmen gelten erweiterte Dokumentationspflichten." },
+        { "id": "law-001-s2", "ref": "Art. 2 Nr. 5", "heading": "Gesellschafterdarlehen", "text": "Zinsen auf Darlehen von Gesellschaftern sind nur in Höhe eines fremdüblichen Zinssatzes abziehbar. Der Nachweis obliegt dem Steuerpflichtigen." },
+        { "id": "law-001-s3", "ref": "Art. 4 Nr. 1", "heading": "Umsatzsteuer, Steuerbefreiungen", "text": "Klarstellungen zur Steuerbefreiung von Bildungsleistungen und zu Leistungen im Gesundheitswesen." }
+      ],
+      "blocks": [
+        { "kind": "summary", "title": "Zusammenfassung", "text": "Der Entwurf bündelt zahlreiche Einzeländerungen im Ertrag- und Umsatzsteuerrecht. Schwerpunkte sind Finanzierungsaufwendungen und Gesellschafterdarlehen.", "generated": true },
+        { "kind": "changes", "title": "Was ändert sich?", "items": ["Neue Freigrenze beim Zinssaldo", "Fremdvergleich für Zinsen auf Gesellschafterdarlehen", "Klarstellungen zu Steuerbefreiungen"], "generated": true },
+        { "kind": "next_steps", "title": "Empfohlene nächste Schritte", "items": ["Gesellschafterdarlehen auf Zinshöhe prüfen", "Gesetzgebungsverfahren weiter beobachten"], "generated": true }
+      ],
+      "extra": { "Beratungsstand": "1. Lesung", "Drucksache": "Beispiel 21/0000" }
+    },
+    {
+      "id": "law-002",
+      "title": "E-Rechnung im B2B Verkehr, Übergangsregeln",
+      "sourceType": "bmf_schreiben",
+      "sourceName": "BMF",
+      "url": "https://www.bundesfinanzministerium.de/",
+      "publishedAt": "2026-10-10",
+      "effectiveAt": "2027-01-01",
+      "detectedAt": "2026-10-10T05:08:00Z",
+      "version": 1,
+      "contentHash": "sha256:2b7f00c1e9a4",
+      "tags": { "taxTypes": ["Umsatzsteuer"], "legalForms": [], "industries": [], "norms": ["§ 14 UStG"], "thresholds": [{ "field": "Umsatzerlöse Vorjahr", "operator": ">", "value": 800000, "unit": "EUR" }] },
+      "sections": [
+        { "id": "law-002-s1", "ref": "Rn. 4", "heading": "Pflicht zur Ausstellung", "text": "Unternehmer mit einem Vorjahresumsatz über 800.000 Euro müssen ab dem 1. Januar 2027 im inländischen B2B Verkehr elektronische Rechnungen ausstellen." },
+        { "id": "law-002-s2", "ref": "Rn. 12", "heading": "Übergangsregeln", "text": "Sonstige Rechnungsformate bleiben bis zum Ende der Übergangsfrist zulässig, wenn der Empfänger zustimmt." },
+        { "id": "law-002-s3", "ref": "Rn. 20", "heading": "Empfang", "text": "Alle Unternehmer müssen den Empfang elektronischer Rechnungen sicherstellen. Ein E-Mail Postfach genügt." }
+      ],
+      "blocks": [
+        { "kind": "summary", "title": "Zusammenfassung", "text": "Das Schreiben regelt die Übergangsphase zur verpflichtenden E-Rechnung zwischen Unternehmen.", "generated": true },
+        { "kind": "changes", "title": "Was ändert sich?", "items": ["Ausstellungspflicht ab 2027 für größere Unternehmen", "Übergangsregeln für sonstige Formate", "Empfangspflicht für alle Unternehmer"], "generated": true },
+        { "kind": "impact", "title": "Relevanz und Auswirkungen", "items": ["Rechnungsprozesse und Software müssen angepasst werden", "Mehraufwand bei der Archivierung"], "generated": true },
+        { "kind": "next_steps", "title": "Empfohlene nächste Schritte", "items": ["Rechnungsausgang der Mandanten prüfen", "Umstellungsplan mit IT abstimmen"], "generated": true }
+      ],
+      "extra": {}
+    },
+    {
+      "id": "law-003",
+      "title": "Änderungen bei der Umsatzsteuer ab 2027",
+      "sourceType": "gesetz",
+      "sourceName": "BMF",
+      "url": "https://www.bundesfinanzministerium.de/",
+      "publishedAt": "2026-10-15",
+      "effectiveAt": "2027-01-01",
+      "detectedAt": "2026-10-16T05:04:00Z",
+      "version": 1,
+      "contentHash": "sha256:3c11d8aa0f52",
+      "tags": { "taxTypes": ["Umsatzsteuer"], "legalForms": [], "industries": ["Handel", "Gastronomie", "Immobilien", "Bau"], "norms": ["§ 12 UStG", "§ 6a UStG", "§ 13b UStG"] },
+      "sections": [
+        { "id": "law-003-s1", "ref": "§ 12 Abs. 2", "heading": "Steuersätze", "text": "Der ermäßigte Steuersatz wird für bestimmte Leistungen angepasst, unter anderem in Gastronomie und Kultur." },
+        { "id": "law-003-s2", "ref": "§ 6a Abs. 3", "heading": "Innergemeinschaftliche Lieferungen", "text": "Die Nachweispflichten für steuerfreie innergemeinschaftliche Lieferungen werden verschärft. Gelangensbestätigungen müssen elektronisch vorliegen." },
+        { "id": "law-003-s3", "ref": "§ 13b Abs. 5", "heading": "Steuerschuldnerschaft des Leistungsempfängers", "text": "Für Bauleistungen gelten neue Abgrenzungsregeln, wenn Material und Leistung gemischt erbracht werden." },
+        { "id": "law-003-s4", "ref": "§ 9 Abs. 2", "heading": "Verzicht auf Steuerbefreiungen", "text": "Die Option zur Steuerpflicht bei der Vermietung von Grundstücken wird an neue Dokumentationspflichten geknüpft." }
+      ],
+      "blocks": [
+        { "kind": "summary", "title": "Zusammenfassung", "text": "Ab dem 1. Januar 2027 treten neue Regelungen zur Umsatzsteuer in Kraft. Betroffen sind Steuersätze, Nachweise bei Lieferungen in andere EU Staaten, Bauleistungen und die Vermietung von Grundstücken.", "generated": true },
+        { "kind": "changes", "title": "Was ändert sich?", "items": ["Anpassung der Steuersätze für bestimmte Leistungen", "Verschärfte Nachweispflichten bei innergemeinschaftlichen Lieferungen", "Neue Abgrenzung bei Bauleistungen", "Dokumentationspflichten bei der Option zur Steuerpflicht"], "generated": true },
+        { "kind": "impact", "title": "Relevanz und Auswirkungen", "items": ["Prozesse und Rechnungsstellung müssen angepasst werden", "Höherer Dokumentationsaufwand bei EU Lieferungen", "Besondere Auswirkungen auf Handel, Bau und Immobilien"], "generated": true },
+        { "kind": "next_steps", "title": "Empfohlene nächste Schritte", "items": ["Relevanz für Ihre Mandanten prüfen", "Betroffene Mandanten über die Änderungen informieren", "Rechnungs- und Buchhaltungsprozesse rechtzeitig anpassen", "Bei Bedarf individuelle Beratungsgespräche anbieten"], "generated": true }
+      ],
+      "extra": {}
+    },
+    {
+      "id": "law-004",
+      "title": "Finanzielle Eingliederung bei der Organschaft",
+      "sourceType": "urteil",
+      "sourceName": "BFH",
+      "url": "https://www.bundesfinanzhof.de/",
+      "publishedAt": "2026-08-20",
+      "detectedAt": "2026-08-21T05:15:00Z",
+      "version": 1,
+      "contentHash": "sha256:4d90be12c3f7",
+      "tags": { "taxTypes": ["Körperschaftsteuer", "Gewerbesteuer"], "legalForms": ["KG", "GmbH & Co. KG"], "industries": [], "norms": ["§ 14 KStG"] },
+      "sections": [
+        { "id": "law-004-s1", "ref": "Rn. 18", "heading": "Leitsatz", "text": "Eine mittelbare finanzielle Eingliederung über eine Mitunternehmerschaft setzt voraus, dass die Beteiligung im Gesamthandsvermögen gehalten wird." },
+        { "id": "law-004-s2", "ref": "Rn. 31", "heading": "Begründung", "text": "Eine Beteiligung im Sonderbetriebsvermögen eines Gesellschafters reicht für die Eingliederung beim Organträger nicht aus." }
+      ],
+      "blocks": [
+        { "kind": "summary", "title": "Zusammenfassung", "text": "Das Gericht präzisiert die Voraussetzungen der finanziellen Eingliederung, wenn eine Personengesellschaft Organträger ist.", "generated": true },
+        { "kind": "next_steps", "title": "Empfohlene nächste Schritte", "items": ["Beteiligungsstruktur von Organkreisen mit Personengesellschaft prüfen"], "generated": true }
+      ],
+      "extra": { "Aktenzeichen": "Beispiel I R 0/25" }
+    },
+    {
+      "id": "law-005",
+      "title": "Erweiterte Kürzung bei Grundstücksunternehmen",
+      "sourceType": "bmf_schreiben",
+      "sourceName": "BMF",
+      "url": "https://www.bundesfinanzministerium.de/",
+      "publishedAt": "2026-07-02",
+      "detectedAt": "2026-07-03T05:02:00Z",
+      "version": 1,
+      "contentHash": "sha256:5e2277aa9b18",
+      "tags": { "taxTypes": ["Gewerbesteuer"], "legalForms": [], "industries": ["Immobilien"], "norms": ["§ 9 Nr. 1 GewStG"] },
+      "sections": [
+        { "id": "law-005-s1", "ref": "Rn. 7", "heading": "Stromlieferungen", "text": "Einnahmen aus der Lieferung von Strom aus Photovoltaikanlagen an Mieter sind bis zu einer Grenze von 10 Prozent der Mieteinnahmen unschädlich." },
+        { "id": "law-005-s2", "ref": "Rn. 15", "heading": "Nebentätigkeiten", "text": "Weitere Nebentätigkeiten bleiben unschädlich, wenn sie 5 Prozent der Mieteinnahmen nicht übersteigen." }
+      ],
+      "blocks": [
+        { "kind": "summary", "title": "Zusammenfassung", "text": "Das Schreiben erläutert, welche Nebentätigkeiten die erweiterte Kürzung nicht gefährden.", "generated": true }
+      ],
+      "extra": {}
+    },
+    {
+      "id": "law-006",
+      "title": "Anpassung der Zinsschranke",
+      "sourceType": "gesetz",
+      "sourceName": "Bundestag",
+      "url": "https://dip.bundestag.de/",
+      "publishedAt": "2026-06-30",
+      "effectiveAt": "2027-01-01",
+      "detectedAt": "2026-07-01T05:20:00Z",
+      "version": 3,
+      "contentHash": "sha256:6f3a5510de04",
+      "tags": { "taxTypes": ["Körperschaftsteuer", "Einkommensteuer", "Gewerbesteuer"], "legalForms": [], "industries": [], "norms": ["§ 4h EStG", "§ 8a KStG"], "thresholds": [{ "field": "Zinsaufwand netto", "operator": ">", "value": 3000000, "unit": "EUR" }] },
+      "sections": [
+        { "id": "law-006-s1", "ref": "Art. 1 Nr. 2", "heading": "Freigrenze", "text": "Die Freigrenze für den Zinssaldo wird von 3 Millionen Euro auf 2 Millionen Euro abgesenkt." },
+        { "id": "law-006-s2", "ref": "Art. 1 Nr. 4", "heading": "Konzernklausel", "text": "Die Escape Klausel wird an einen Eigenkapitalvergleich auf Basis internationaler Rechnungslegung gebunden." },
+        { "id": "law-006-s3", "ref": "Art. 3", "heading": "Inkrafttreten", "text": "Die Änderungen gelten für Wirtschaftsjahre, die nach dem 31. Dezember 2026 beginnen." }
+      ],
+      "blocks": [
+        { "kind": "summary", "title": "Zusammenfassung", "text": "Die Freigrenze für abziehbare Zinsaufwendungen sinkt. Mehr Unternehmen fallen damit unter die Abzugsbeschränkung.", "generated": true },
+        { "kind": "changes", "title": "Was ändert sich?", "items": ["Absenkung der Freigrenze auf 2 Millionen Euro", "Neue Bedingungen für die Escape Klausel"], "generated": true },
+        { "kind": "timeline", "title": "Zeitplan", "items": ["Verkündung: 30.06.2026", "Anwendung ab Wirtschaftsjahr 2027"], "generated": true }
+      ],
+      "extra": { "euRichtlinie": "ATAD (Richtlinie (EU) 2016/1164)", "uebergangsfristMonate": 6 }
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "common.schema.json",
+  "title": "Shared definitions",
+  "description": "Building blocks reused by the entity schemas. Open vocabularies are plain strings: consumers must render unknown values as text.",
+  "$defs": {
+    "id": {
+      "description": "Opaque identifier. Never parse or build it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "extra": {
+      "description": "Free key value area for anything that fits nowhere else. Rendered as plain key value text.",
+      "type": "object"
+    },
+    "source": {
+      "description": "Where a value was found. Page is 1 based; for Excel it is the sheet position. The quote exists only during review.",
+      "type": "object",
+      "required": ["filename", "page"],
+      "properties": {
+        "filename": { "type": "string" },
+        "page": { "type": "integer", "minimum": 1 },
+        "quote": { "type": "string" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "candidate": {
+      "description": "One possible value for a fact during review.",
+      "type": "object",
+      "required": ["id", "value", "sources"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "value": {},
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
+        "alternatives": {
+          "description": "Values that differ only by rounding, grouped into this candidate.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["value", "sources"],
+            "properties": {
+              "value": {},
+              "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } }
+            }
+          }
+        }
+      }
+    },
+    "fact": {
+      "description": "One open profile fact. The UI never knows the label set in advance.",
+      "type": "object",
+      "required": ["id", "label", "type", "sources"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "group": { "description": "Free grouping label, for example Organschaft.", "type": "string" },
+        "label": { "type": "string" },
+        "value": { "description": "Any JSON value. Absent or null when missing." },
+        "type": {
+          "description": "Known: string, integer, number, boolean, date, enum, list, object. Unknown types render as text.",
+          "type": "string"
+        },
+        "enumValues": { "description": "Allowed values when type is enum.", "type": "array" },
+        "unit": { "type": "string" },
+        "code": { "description": "Backend field id, for example B04. Opaque.", "type": "string" },
+        "coreField": {
+          "description": "Optional. The company core field this fact fills on confirmation: name, legalForm, industry, customerNumber, contact.salutation, contact.name, contact.email, contact.phone. Unknown values are ignored.",
+          "type": "string"
+        },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
+        "reviewStatus": {
+          "description": "Known: confirmed, single_source, conflict, missing. Unknown values render as text.",
+          "type": "string"
+        },
+        "needsReview": { "type": "boolean" },
+        "reviewReason": { "description": "Why the value needs review, for example OCR page.", "type": "string" },
+        "reasoning": { "description": "Extraction reasoning, shown only during review.", "type": "string" },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
+        "alternatives": {
+          "description": "Values that differ only by rounding from the shown value.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["value", "sources"],
+            "properties": {
+              "value": {},
+              "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "0.1.0",
+  "runId": "run-2026-10-16",
+  "generatedAt": "2026-10-16T05:12:00Z",
+  "items": [
+    {
+      "id": "m-01", "companyId": "cmp-7f3a01", "lawChangeId": "law-003",
+      "assessment": { "score": 0.82, "confidence": 0.91, "reason": "Das Unternehmen tätigt innergemeinschaftliche Lieferungen. Die verschärften Nachweispflichten betreffen diese Lieferungen direkt.", "evidence": [{ "factId": "c1-f05", "factLabel": "Innergemeinschaftliche Lieferungen", "sectionRef": "§ 6a Abs. 3", "similarity": 0.82 }], "lawVersion": 1, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "relevant", "emailStatus": "discussed", "notes": "Termin am 16.10. telefonisch geführt.", "sentAt": "2026-10-16T07:40:00Z", "outreachId": "out-004", "discussedAt": "2026-10-16T15:00:00Z", "updatedBy": "adv-001", "updatedAt": "2026-10-16T15:00:00Z" }
+    },
+    {
+      "id": "m-02", "companyId": "cmp-2b9c44", "lawChangeId": "law-003",
+      "assessment": { "score": 0.77, "confidence": 0.84, "reason": "Die Gesellschaft erbringt Leistungen an Kunden in anderen EU Staaten. Die neuen Nachweispflichten können die Steuerfreiheit dieser Umsätze berühren.", "evidence": [{ "factId": "c2-f16", "factLabel": "Innergemeinschaftliche Leistungen", "sectionRef": "§ 6a Abs. 3", "similarity": 0.77 }], "lawVersion": 1, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "relevant", "emailStatus": "not_sent", "updatedBy": "adv-001", "updatedAt": "2026-10-16T09:00:00Z" }
+    },
+    {
+      "id": "m-03", "companyId": "cmp-c81d02", "lawChangeId": "law-003",
+      "assessment": { "score": 0.71, "confidence": 0.68, "reason": "Das Unternehmen erbringt Bauleistungen mit Umkehr der Steuerschuldnerschaft. Die neue Abgrenzung bei gemischten Leistungen kann die Rechnungsstellung ändern.", "evidence": [{ "factId": "c3-f05", "factLabel": "Erbringt Bauleistungen (Reverse Charge)", "sectionRef": "§ 13b Abs. 5", "similarity": 0.71 }], "lawVersion": 1, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "unlabeled", "emailStatus": "not_sent" }
+    },
+    {
+      "id": "m-04", "companyId": "cmp-9a17ff", "lawChangeId": "law-003",
+      "assessment": { "score": 0.69, "confidence": 0.73, "reason": "Die Gesellschaft optiert bei einem Teil der Vermietungen zur Umsatzsteuer. Für diese Option gelten neue Dokumentationspflichten.", "evidence": [{ "factId": "c5-f06", "factLabel": "Option zur Umsatzsteuer bei Vermietung", "sectionRef": "§ 9 Abs. 2", "similarity": 0.69 }], "lawVersion": 1, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "relevant", "emailStatus": "sent", "sentAt": "2026-10-16T10:20:00Z", "outreachId": "out-002", "updatedBy": "adv-001", "updatedAt": "2026-10-16T10:20:00Z" }
+    },
+    {
+      "id": "m-05", "companyId": "cmp-7f3a01", "lawChangeId": "law-002",
+      "assessment": { "score": 0.86, "confidence": 0.93, "reason": "Der Umsatz liegt deutlich über der Grenze von 800.000 Euro und Ausgangsrechnungen werden noch nicht elektronisch erstellt. Die Ausstellungspflicht greift ab 2027.", "evidence": [{ "factId": "c1-f06", "factLabel": "Ausgangsrechnungen elektronisch", "sectionRef": "Rn. 4", "similarity": 0.86 }, { "factId": "c1-f03", "factLabel": "Umsatzerlöse 2025", "sectionRef": "Rn. 4" }], "lawVersion": 1, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "relevant", "emailStatus": "not_sent", "updatedBy": "adv-001", "updatedAt": "2026-10-12T08:00:00Z" }
+    },
+    {
+      "id": "m-06", "companyId": "cmp-7f3a01", "lawChangeId": "law-001",
+      "assessment": { "score": 0.52, "confidence": 0.41, "reason": "Allgemeine Änderungen im Ertragsteuerrecht. Ein konkreter Bezug zum Profil ist nur schwach erkennbar.", "evidence": [{ "factId": "c1-f08", "factLabel": "Wirtschaftsjahr", "sectionRef": "Art. 1 Nr. 3", "similarity": 0.52 }], "lawVersion": 2, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "unlabeled", "emailStatus": "not_sent" }
+    },
+    {
+      "id": "m-07", "companyId": "cmp-2b9c44", "lawChangeId": "law-001",
+      "assessment": { "score": 0.74, "confidence": 0.62, "reason": "Es besteht ein Gesellschafterdarlehen mit 6 Prozent Zins. Der geplante Fremdvergleich kann den Zinsabzug begrenzen.", "evidence": [{ "factId": "c2-f15", "factLabel": "Darlehen", "sectionRef": "Art. 2 Nr. 5", "similarity": 0.74 }], "lawVersion": 2, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "irrelevant", "emailStatus": "not_sent", "notes": "Darlehen wird 2026 abgelöst.", "updatedBy": "adv-001", "updatedAt": "2026-10-01T10:00:00Z" }
+    },
+    {
+      "id": "m-08", "companyId": "cmp-2b9c44", "lawChangeId": "law-002",
+      "assessment": { "score": 0.8, "confidence": 0.88, "reason": "Ausgangsrechnungen werden nur teilweise elektronisch erstellt und ein Empfang über Portal fehlt. Die Gesellschaft liegt über der Umsatzgrenze.", "evidence": [{ "factId": "c2-f17", "factLabel": "Ausgangsrechnungen elektronisch", "sectionRef": "Rn. 4", "similarity": 0.8 }, { "factId": "c2-f18", "factLabel": "Rechnungsempfang über Portal", "sectionRef": "Rn. 20", "similarity": 0.66 }], "lawVersion": 1, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "relevant", "emailStatus": "sent", "sentAt": "2026-10-12T11:20:00Z", "outreachId": "out-001", "updatedBy": "adv-001", "updatedAt": "2026-10-12T11:20:00Z" }
+    },
+    {
+      "id": "m-09", "companyId": "cmp-2b9c44", "lawChangeId": "law-004",
+      "assessment": { "score": 0.88, "confidence": 0.9, "reason": "Die KG ist Organträgerin und die finanzielle Eingliederung läuft über die Mitunternehmerschaft. Das Urteil verlangt, dass die Beteiligung im Gesamthandsvermögen liegt.", "evidence": [{ "factId": "c2-f13", "factLabel": "Finanzielle Eingliederung über Mitunternehmerschaft", "sectionRef": "Rn. 18", "similarity": 0.88 }, { "factId": "c2-f12", "factLabel": "Organgesellschaften", "sectionRef": "Rn. 31", "similarity": 0.79 }], "lawVersion": 1, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "relevant", "emailStatus": "not_sent", "updatedBy": "adv-001", "updatedAt": "2026-08-22T09:00:00Z" }
+    },
+    {
+      "id": "m-10", "companyId": "cmp-2b9c44", "lawChangeId": "law-006",
+      "assessment": { "score": 0.63, "confidence": 0.57, "reason": "Der Zinssaldo liegt mit 2,45 Millionen Euro zwischen alter und neuer Freigrenze. Ob die Konzernklausel greift, ist offen.", "evidence": [{ "factId": "c2-f09", "factLabel": "Zinsaufwand netto 2025", "sectionRef": "Art. 1 Nr. 2", "similarity": 0.63 }], "lawVersion": 3, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "unlabeled", "emailStatus": "sent", "sentAt": "2026-10-12T11:20:00Z", "outreachId": "out-001", "updatedBy": "adv-001", "updatedAt": "2026-10-12T11:20:00Z" }
+    },
+    {
+      "id": "m-11", "companyId": "cmp-c81d02", "lawChangeId": "law-002",
+      "assessment": { "score": 0.58, "confidence": 0.49, "reason": "Der Umsatz liegt über der Grenze. Ob Rechnungen bereits elektronisch erstellt werden, ist im Profil unbekannt.", "evidence": [{ "factId": "c3-f07", "factLabel": "Ausgangsrechnungen elektronisch", "sectionRef": "Rn. 4", "similarity": 0.58 }], "lawVersion": 1, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "irrelevant", "emailStatus": "sent", "notes": "Umstellung bereits erfolgt, laut Telefonat.", "sentAt": "2026-10-11T08:30:00Z", "outreachId": "out-003", "updatedBy": "adv-001", "updatedAt": "2026-10-13T14:00:00Z" }
+    },
+    {
+      "id": "m-12", "companyId": "cmp-c81d02", "lawChangeId": "law-006",
+      "assessment": { "score": 0.75, "confidence": 0.79, "reason": "Der Zinssaldo von 3,4 Millionen Euro überschreitet künftig die gesenkte Freigrenze deutlich.", "evidence": [{ "factId": "c3-f04", "factLabel": "Zinsaufwand netto 2025", "sectionRef": "Art. 1 Nr. 2", "similarity": 0.75 }], "lawVersion": 3, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "unlabeled", "emailStatus": "discussed", "discussedAt": "2026-10-14T09:05:00Z", "updatedBy": "adv-001", "updatedAt": "2026-10-14T09:05:00Z" }
+    },
+    {
+      "id": "m-13", "companyId": "cmp-9a17ff", "lawChangeId": "law-005",
+      "assessment": { "score": 0.84, "confidence": 0.86, "reason": "Die Gesellschaft nutzt die erweiterte Kürzung und betreibt Photovoltaikanlagen auf zwei Objekten.", "evidence": [{ "factId": "c5-f04", "factLabel": "Erweiterte Kürzung beantragt", "sectionRef": "Rn. 7", "similarity": 0.84 }, { "factId": "c5-f05", "factLabel": "Objekte", "sectionRef": "Rn. 7", "similarity": 0.72 }], "lawVersion": 1, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "irrelevant", "emailStatus": "discussed", "notes": "Stromlieferung liegt unter 2 Prozent, kein Handlungsbedarf.", "discussedAt": "2026-07-10T11:00:00Z", "updatedBy": "adv-001", "updatedAt": "2026-07-10T11:00:00Z" }
+    },
+    {
+      "id": "m-14", "companyId": "cmp-9a17ff", "lawChangeId": "law-006",
+      "assessment": { "score": 0.81, "confidence": 0.87, "reason": "Der Zinssaldo von 7,9 Millionen Euro liegt weit über der Freigrenze. Die neuen Bedingungen der Escape Klausel sind für die Gesellschaft entscheidend.", "evidence": [{ "factId": "c5-f03", "factLabel": "Zinsaufwand netto 2025", "sectionRef": "Art. 1 Nr. 4", "similarity": 0.81 }], "lawVersion": 3, "screenedAt": "2026-10-16T05:12:00Z", "runId": "run-2026-10-16" },
+      "review": { "label": "relevant", "emailStatus": "not_sent", "updatedBy": "adv-001", "updatedAt": "2026-07-05T10:00:00Z" }
+    }
+  ]
+}

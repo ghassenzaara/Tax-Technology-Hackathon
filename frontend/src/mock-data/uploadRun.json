@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "run-upl-demo",
+  "companyId": "cmp-draft-demo",
+  "status": "finished",
+  "startedAt": "2026-10-17T09:00:00Z",
+  "finishedAt": "2026-10-17T09:01:24Z",
+  "documents": [
+    { "id": "doc-01", "relativePath": "DD Ordner/DD Tax Bericht 2026.pdf", "sizeBytes": 2457600, "fileType": "text_pdf", "parsingStatus": "ok", "extractionStatus": "ok", "warnings": [] },
+    { "id": "doc-02", "relativePath": "DD Ordner/Jahresabschluss 2025.pdf", "sizeBytes": 1835008, "fileType": "text_pdf", "parsingStatus": "ok", "extractionStatus": "ok", "warnings": [] },
+    { "id": "doc-03", "relativePath": "DD Ordner/Steuerbescheide/Steuerbescheide 2024 (Scan).pdf", "sizeBytes": 5242880, "fileType": "scanned_pdf", "parsingStatus": "partial", "extractionStatus": "partial", "warnings": ["Seite 3 wurde per Texterkennung gelesen, Werte bitte prüfen", "Seite 5 ist schlecht lesbar"] },
+    { "id": "doc-04", "relativePath": "DD Ordner/BWA 2025.xlsx", "sizeBytes": 1153434, "fileType": "excel", "parsingStatus": "ok", "extractionStatus": "ok", "warnings": [] },
+    { "id": "doc-05", "relativePath": "DD Ordner/Verträge/Gesellschaftsvertrag.pdf", "sizeBytes": 734003, "fileType": "text_pdf", "parsingStatus": "ok", "extractionStatus": "failed", "warnings": [], "error": { "code": "extraction_timeout", "message": "Die Auswertung hat zu lange gedauert und wurde abgebrochen." } },
+    { "id": "doc-06", "relativePath": "DD Ordner/Verträge/Darlehensvertrag.pdf", "sizeBytes": 412000, "fileType": "text_pdf", "parsingStatus": "failed", "extractionStatus": "skipped", "warnings": [], "error": { "code": "pdf_encrypted", "message": "Die Datei ist passwortgeschützt und konnte nicht gelesen werden." } },
+    { "id": "doc-07", "relativePath": "DD Ordner/Notizen/Besprechungsprotokoll.docx", "sizeBytes": 98304, "fileType": "unsupported", "parsingStatus": "unsupported", "extractionStatus": "skipped", "warnings": ["Dateityp wird nicht unterstützt"] }
+  ]
+}
