@@ -1,0 +1,22 @@
+# Local Postgres for development (mock data only). Includes pgvector for step 9.
+# Start: docker compose up -d
+# Then: DATABASE_URL=postgresql://dd:dd@localhost:5432/dd and REPOSITORY=postgres in .env
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: dd
+      POSTGRES_PASSWORD: dd
+      POSTGRES_DB: dd
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dd -d dd"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:

@@ -20,8 +20,9 @@ from app.config import Settings, get_settings
 from app.ingest.discover import DiscoveredFile, FileFormat, classify, discover
 from app.ingest.excel import parse_excel
 from app.ingest.normalize import build_document, compute_doc_id
-from app.ingest.pdf_ocr import make_client, transcribe_pages
+from app.ingest.pdf_ocr import transcribe_pages
 from app.ingest.pdf_text import parse_pdf_text
+from app.llm import make_client
 from app.models.document import DocStatus, Document, Timings, TokenUsage
 
 log = logging.getLogger(__name__)

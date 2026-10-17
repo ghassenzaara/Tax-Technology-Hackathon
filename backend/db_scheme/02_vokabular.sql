@@ -1,49 +1,111 @@
 -- =====================================================================
--- Tests: Abgleich der Seeds mit den Lösungsschlüsseln + Fallstricke
--- Bricht bei der ersten Abweichung mit einer Fehlermeldung ab.
+-- Festes Vokabular: Dokumentklassen (Rang), Normen, Merkmale (Prototyp)
 -- =====================================================================
 SET search_path = profil, public;
 
-CREATE OR REPLACE FUNCTION pg_temp.ok(cond boolean, msg text) RETURNS void LANGUAGE plpgsql AS
-$$ BEGIN IF cond IS NOT TRUE THEN RAISE EXCEPTION 'TEST FEHLGESCHLAGEN: %', msg; END IF; RAISE NOTICE 'ok  – %', msg; END $$;
+INSERT INTO dokument_klasse (code, bezeichnung, rang) VALUES
+ ('bescheid',         'Steuer- und Feststellungsbescheide',                     1),
+ ('register',         'Handelsregister, Gesellschafterlisten',                  1),
+ ('vertrag',          'Gewinnabführungs-, Darlehens-, Miet-, Einbringungsverträge', 1),
+ ('spa',              'Kaufvertrag (SPA) und Vollzugsprotokoll',                1),
+ ('grundbuch',        'Grundbuchauszüge, Immobilienliste',                      1),
+ ('aussenpruefung',   'Prüfungsanordnungen und Prüfungsberichte',               2),
+ ('rechtsbehelf',     'Einsprüche, Ruhensmitteilungen, Korrespondenz FA',       2),
+ ('jahresabschluss',  'Jahresabschlüsse, Steuerbilanzen',                       2),
+ ('organigramm',      'Konzernorganigramme',                                    3),
+ ('dd_report',        'Tax-Due-Diligence-Bericht',                              3),
+ ('erklaerung',       'Steuererklärungen, ELSTER-Protokolle',                   4),
+ ('qa_index',         'Datenraum-Index, Q&A-Log',                               5),
+ ('entwurf',          'Entwürfe (nicht unterzeichnet) – nie als Beleg für Bestand', 9);
 
--- ---------- Nordhafen ----------
-SELECT pg_temp.ok((SELECT closing_am = '2026-05-12' FROM deal WHERE projektname='Hafenkante'), 'A01 Closing Nordhafen');
-SELECT pg_temp.ok((SELECT wz_code = '52.10' AND rolle = 'operativ' FROM gesellschaft WHERE name='Nordhafen Logistik GmbH'), 'A06/A07 Nordhafen');
-SELECT pg_temp.ok((SELECT gesellschafter = 'Weserlinie Logistics BidCo GmbH' AND quote_prozent = 100 FROM v_gesellschafter_aktuell WHERE gesellschaft='Nordhafen Logistik GmbH'), 'B01 Nordhafen 100 % BidCo');
-SELECT pg_temp.ok((SELECT wert = 'nein' FROM merkmal_wert WHERE gesellschaft_id=ges('Nordhafen Logistik GmbH') AND merkmal_code='B04'), 'Fallstrick: GAV-Entwurf → B04 nein');
-SELECT pg_temp.ok((SELECT status = 'unbekannt' FROM auslandsbezug WHERE land='PL'), 'Fallstrick: Betriebsstätte Polen unbekannt');
-SELECT pg_temp.ok((SELECT bescheid_vom = '2026-02-03' FROM veranlagung WHERE gesellschaft_id=ges('Nordhafen Logistik GmbH') AND jahr=2024 AND steuerart='KSt'), 'Fallstrick: Bescheid 2024 nach Report-Stichtag');
-SELECT pg_temp.ok((SELECT verjaehrt FROM veranlagung WHERE gesellschaft_id=ges('Nordhafen Logistik GmbH') AND jahr=2020 AND steuerart='KSt'), 'C06 2020 verjährt');
-SELECT pg_temp.ok((SELECT betrag_eur = 2412380 FROM steuerattribut WHERE gesellschaft_id=ges('Nordhafen Logistik GmbH') AND art='kst_verlustvortrag' AND stichtag='2024-12-31'), 'D01 Nordhafen exakt aus Bescheid');
-SELECT pg_temp.ok((SELECT betrag_eur = 1790328 FROM steuerattribut WHERE gesellschaft_id=ges('Nordhafen Logistik GmbH') AND art='gewst_fehlbetrag' AND stichtag='2024-12-31'), 'D02 Nordhafen');
-SELECT pg_temp.ok((SELECT betrag_eur = 0 AND NOT festgestellt FROM steuerattribut WHERE gesellschaft_id=ges('Nordhafen Logistik GmbH') AND art='zinsvortrag'), 'Fallstrick: Zinsvortrag belegt 0 (nicht unbekannt)');
-SELECT pg_temp.ok((SELECT count(*) = 2 FROM darlehen WHERE darlehensnehmer_id=ges('Nordhafen Logistik GmbH')), 'Fallstrick: E01 zwei Darlehen (alt + neu)');
-SELECT pg_temp.ok((SELECT sperrfrist_status = 'ausgeloest' AND einbringungsgewinn_eur = 1001429 FROM umwandlung WHERE gesellschaft_id=ges('Nordhafen Logistik GmbH')), 'Fallstrick: Sperrfrist ausgelöst');
-SELECT pg_temp.ok((SELECT count(*) = 6 FROM finding WHERE deal_id=deal_id('Hafenkante')), 'K Nordhafen 6 Findings');
+INSERT INTO norm (code, gesetz, bezeichnung) VALUES
+ ('§ 8c KStG','KStG','Verlustuntergang bei Anteilsübertragung'),
+ ('§ 8b KStG','KStG','Beteiligungserträge'),
+ ('§ 8 Abs. 3 KStG','KStG','Verdeckte Gewinnausschüttung'),
+ ('§ 14 KStG','KStG','Ertragsteuerliche Organschaft'),
+ ('§ 15 KStG','KStG','Einkommensermittlung bei Organschaft'),
+ ('§ 8a KStG','KStG','Zinsschranke (KSt)'),
+ ('§ 10d EStG','EStG','Verlustabzug'),
+ ('§ 4h EStG','EStG','Zinsschranke'),
+ ('§ 6 Abs. 1 Nr. 1a EStG','EStG','Anschaffungsnahe Herstellungskosten'),
+ ('§ 15 EStG','EStG','Einkünfte aus Gewerbebetrieb / Mitunternehmerschaft'),
+ ('§ 50d Abs. 3 EStG','EStG','Missbrauchsabwehr Quellensteuer'),
+ ('§ 2 Abs. 2 GewStG','GewStG','Gewerbesteuerliche Organschaft'),
+ ('§ 8 Nr. 1 Buchst. d GewStG','GewStG','Hinzurechnung Miete bewegliche WG'),
+ ('§ 8 Nr. 1 Buchst. e GewStG','GewStG','Hinzurechnung Miete unbewegliche WG'),
+ ('§ 9 Nr. 1 S. 1 GewStG','GewStG','Einfache Grundstückskürzung'),
+ ('§ 9 Nr. 1 S. 2 GewStG','GewStG','Erweiterte Grundstückskürzung'),
+ ('§ 9 Nr. 1 S. 5 Nr. 1 GewStG','GewStG','Ausschluss erweiterte Kürzung (Gesellschafter)'),
+ ('§ 10a GewStG','GewStG','Gewerbeverlust'),
+ ('§ 68 Abs. 2 Nr. 2 BewG','BewG','Betriebsvorrichtungen'),
+ ('§ 20 UmwStG','UmwStG','Einbringung in Kapitalgesellschaft'),
+ ('§ 21 UmwStG','UmwStG','Anteilstausch'),
+ ('§ 22 Abs. 1 UmwStG','UmwStG','Einbringungsgewinn I'),
+ ('§ 22 Abs. 2 UmwStG','UmwStG','Einbringungsgewinn II'),
+ ('§ 23 Abs. 2 UmwStG','UmwStG','Buchwertaufstockung'),
+ ('§ 1 AStG','AStG','Verrechnungspreise'),
+ ('§ 1 Abs. 2b GrEStG','GrEStG','Anteilsübertragung Kapitalgesellschaft ≥ 90 %'),
+ ('§ 1 Abs. 3 GrEStG','GrEStG','Anteilsvereinigung'),
+ ('§ 13 Nr. 7 GrEStG','GrEStG','Steuerschuldner bei § 1 Abs. 2b'),
+ ('§ 2 Abs. 2 Nr. 2 UStG','UStG','Umsatzsteuerliche Organschaft'),
+ ('§ 4 Nr. 3 UStG','UStG','Steuerbefreiung grenzüberschreitende Güterbeförderung'),
+ ('§ 4 Nr. 12 UStG','UStG','Steuerbefreiung Vermietung'),
+ ('§ 4 Nr. 16 UStG','UStG','Steuerbefreiung Pflege'),
+ ('§ 15 Abs. 4 UStG','UStG','Vorsteueraufteilung'),
+ ('§ 302 AktG','AktG','Verlustübernahme'),
+ ('§ 90 Abs. 3 AO','AO','Verrechnungspreisdokumentation'),
+ ('§ 162 Abs. 4 AO','AO','Zuschläge bei Dokumentationsmängeln'),
+ ('§ 149 AO','AO','Abgabe der Steuererklärung'),
+ ('§ 164 AO','AO','Vorbehalt der Nachprüfung'),
+ ('§ 165 AO','AO','Vorläufige Steuerfestsetzung'),
+ ('§ 169 AO','AO','Festsetzungsfrist'),
+ ('§ 171 AO','AO','Ablaufhemmung'),
+ ('§ 173 Abs. 2 AO','AO','Änderungssperre nach Außenprüfung'),
+ ('§ 196 AO','AO','Prüfungsanordnung'),
+ ('§ 347 AO','AO','Einspruch'),
+ ('§ 363 Abs. 2 AO','AO','Ruhen des Verfahrens'),
+ ('DBA','DBA','Doppelbesteuerungsabkommen');
 
--- ---------- Marschland ----------
-SELECT pg_temp.ok((SELECT count(*) = 3 FROM gesellschaft WHERE deal_id=deal_id('Marsh')), 'Marschland: drei Profile');
-SELECT pg_temp.ok((SELECT string_agg(gesellschafter || ' ' || quote_prozent, '; ' ORDER BY quote_prozent DESC) = 'Marschland Holding GmbH 94.9000; Anke Hinrichs-Wolter 5.1000'
-                   FROM v_gesellschafter_aktuell WHERE gesellschaft='Marschland Immobilien GmbH'), 'Fallstrick: Immobilien 94,9 / 5,1');
-SELECT pg_temp.ok((SELECT wert = 'nein' FROM merkmal_wert WHERE gesellschaft_id=ges('Marschland Immobilien GmbH') AND merkmal_code='B04')
-              AND (SELECT wert = 'ja' FROM merkmal_wert WHERE gesellschaft_id=ges('Marschland Immobilien GmbH') AND merkmal_code='B05'), 'Fallstrick: Immobilien B04 nein / B05 ja');
-SELECT pg_temp.ok((SELECT wert = 'unbekannt' FROM merkmal_wert WHERE gesellschaft_id=ges('Marschland Seniorenzentren GmbH') AND merkmal_code='E05'), 'Fallstrick: Parkplatz → E05 unbekannt');
-SELECT pg_temp.ok((SELECT betrag_eur = 312400 FROM steuerattribut WHERE gesellschaft_id=ges('Marschland Seniorenzentren GmbH') AND art='kst_verlustvortrag'), 'Fallstrick: 312.400 statt „314k“');
-SELECT pg_temp.ok((SELECT vorlaeufig_az = 'IV R 21/25' AND bescheid_vom = '2026-03-18' FROM veranlagung WHERE gesellschaft_id=ges('Marschland Immobilien GmbH') AND jahr=2024 AND steuerart='GewSt'), 'Fallstrick: GewSt 2024 nach Cut-off, vorläufig');
-SELECT pg_temp.ok((SELECT count(*) = 3 FROM aussenpruefung WHERE status='angeordnet' AND beginn_am='2026-11-02'), 'Fallstrick: BP nach Closing (C09 ja, alle 3)');
-SELECT pg_temp.ok((SELECT abgetreten_an = 'Moorhaven Care BidCo GmbH' FROM darlehen WHERE darlehensnehmer_id=ges('Marschland Immobilien GmbH')), 'Fallstrick: Gläubigerwechsel Darlehen');
-SELECT pg_temp.ok((SELECT array_agg(sperrfrist_status ORDER BY einbringungszeitpunkt) = '{abgelaufen,laeuft}' FROM umwandlung WHERE gesellschaft_id=ges('Marschland Holding GmbH')), 'Fallstrick: zwei Sperrfristen');
-SELECT pg_temp.ok((SELECT count(*) = 7 FROM finding WHERE deal_id=deal_id('Marsh')), 'K Marschland 7 Findings');
+INSERT INTO merkmal_def (code, block, bezeichnung, feldtyp, prio, dynamik, zieltabelle) VALUES
+ ('A01','A','Deal-Typ, Signing, Closing','stammdatum','P1','statisch','deal'),
+ ('A02','A','DD-Art und Stand','stammdatum','P1','statisch','deal'),
+ ('A04','A','Name, Sitz, Land','stammdatum','P1','statisch','gesellschaft'),
+ ('A05','A','Rechtsform','stammdatum','P1','ereignis','gesellschaft'),
+ ('A06','A','Rolle im Konzern','stammdatum','P1','ereignis','gesellschaft'),
+ ('A07','A','Branche (WZ-Code)','stammdatum','P1','statisch','gesellschaft'),
+ ('B01','B','Gesellschafter mit Quote','liste','P1','ereignis','beteiligung'),
+ ('B02','B','Anteilswechsel der letzten 10 Jahre','liste','P1','ereignis','anteilswechsel'),
+ ('B04','B','KSt-/GewSt-Organschaft','merkmal','P1','ereignis','organschaft'),
+ ('B05','B','USt-Organschaft','merkmal','P1','ereignis','organschaft'),
+ ('B07','B','Ausländische Töchter und Betriebsstätten','merkmal','P1','ereignis','auslandsbezug'),
+ ('C01','C','Veranlagungsstand','liste','P1','jaehrlich','veranlagung'),
+ ('C02','C','Vorbehalt der Nachprüfung','merkmal','P1','jaehrlich','veranlagung'),
+ ('C03','C','Vorläufigkeitsvermerke','liste','P1','jaehrlich','veranlagung'),
+ ('C04','C','Offene Einsprüche und Klagen','merkmal','P1','ereignis','rechtsbehelf'),
+ ('C05','C','Ruhende Verfahren mit Musterverfahren','liste','P1','ereignis','rechtsbehelf'),
+ ('C06','C','Festsetzungsverjährung','frist','P1','jaehrlich','veranlagung'),
+ ('C07','C','Letzte Betriebsprüfung','liste','P1','ereignis','aussenpruefung'),
+ ('C08','C','Feststellungen der letzten Prüfung','liste','P1','ereignis','pruefungsfeststellung'),
+ ('C09','C','Laufende oder angeordnete Prüfung','merkmal','P1','ereignis','aussenpruefung'),
+ ('D01','D','KSt-Verlustvortrag','attribut','P1','jaehrlich','steuerattribut'),
+ ('D02','D','GewSt-Fehlbetrag','attribut','P1','jaehrlich','steuerattribut'),
+ ('D04','D','Zins- und EBITDA-Vortrag','attribut','P1','jaehrlich','steuerattribut'),
+ ('E01','E','Darlehen von Gesellschaftern/Nahestehenden','merkmal','P1','jaehrlich','darlehen'),
+ ('E03','E','Wesentliche Mieten, Pachten, Leasing','merkmal','P1','jaehrlich','nutzungsvertrag'),
+ ('E05','E','Grundbesitz im Betriebsvermögen','merkmal','P1','ereignis','grundstueck'),
+ ('E05b','E','Erweiterte Kürzung beansprucht','merkmal','P1','jaehrlich','veranlagung'),
+ ('E06','E','Umwandlungen/Einbringungen 7 Jahre','merkmal','P1','ereignis','umwandlung'),
+ ('G02','G','Steuerfreie Ausgangsumsätze','merkmal','P1','jaehrlich','ust_steuerfrei'),
+ ('K','K','Risikoregister','finding','P1','ereignis','finding');
 
--- ---------- Block L ----------
-SELECT pg_temp.ok((SELECT count(*) >= 1 FROM v_fristen WHERE feld='E06' AND datum='2027-03-31' AND status='alert'), 'L: Sperrfrist 31.03.2027 löst Alert aus');
-SELECT pg_temp.ok((SELECT count(*) = 0 FROM v_fristen WHERE frist LIKE 'Mindestlaufzeit GAV Weserlinie%'), 'L: geplante Organschaft erzeugt keine Frist');
-
--- ---------- Direkter Treffer (Matching-Regel 1) mit fiktivem Urteil ----------
-BEGIN;
-INSERT INTO urteil (gericht, aktenzeichen, datum, status, steuerarten, richtung, kernaussage)
-VALUES ('BFH','IV R 21/25','2026-10-15','rechtskraeftig','{GewSt}','zugunsten','(fiktiv) Vermietung an Schwester-Organgesellschaft schließt erweiterte Kürzung nicht aus.');
-SELECT pg_temp.ok((SELECT count(*) = 3 FROM v_direkte_treffer WHERE aktenzeichen='IV R 21/25' AND gesellschaft='Marschland Immobilien GmbH'),
-                  'Direkttreffer IV R 21/25 → Einspruch 2023, Vorläufigkeit 2024, Finding K-1');
-ROLLBACK;
+INSERT INTO merkmal_norm (merkmal_code, norm_code) VALUES
+ ('A05','§ 15 EStG'),('A06','§ 8b KStG'),('A06','§ 9 Nr. 1 S. 2 GewStG'),
+ ('B01','§ 8c KStG'),('B01','§ 1 Abs. 2b GrEStG'),('B02','§ 8c KStG'),('B02','§ 1 Abs. 2b GrEStG'),('B02','§ 1 Abs. 3 GrEStG'),
+ ('B04','§ 14 KStG'),('B04','§ 2 Abs. 2 GewStG'),('B04','§ 302 AktG'),('B05','§ 2 Abs. 2 Nr. 2 UStG'),('B07','DBA'),('B07','§ 1 AStG'),
+ ('C01','§ 149 AO'),('C02','§ 164 AO'),('C03','§ 165 AO'),('C04','§ 347 AO'),('C05','§ 363 Abs. 2 AO'),('C06','§ 169 AO'),('C06','§ 171 AO'),
+ ('C07','§ 173 Abs. 2 AO'),('C09','§ 196 AO'),
+ ('D01','§ 10d EStG'),('D01','§ 8c KStG'),('D02','§ 10a GewStG'),('D04','§ 4h EStG'),('D04','§ 8a KStG'),
+ ('E01','§ 8 Abs. 3 KStG'),('E01','§ 1 AStG'),('E03','§ 8 Nr. 1 Buchst. d GewStG'),('E03','§ 8 Nr. 1 Buchst. e GewStG'),
+ ('E05','§ 9 Nr. 1 S. 1 GewStG'),('E05b','§ 9 Nr. 1 S. 2 GewStG'),('E05b','§ 9 Nr. 1 S. 5 Nr. 1 GewStG'),('E05b','§ 68 Abs. 2 Nr. 2 BewG'),
+ ('E06','§ 20 UmwStG'),('E06','§ 21 UmwStG'),('E06','§ 22 Abs. 1 UmwStG'),('E06','§ 22 Abs. 2 UmwStG'),
+ ('G02','§ 4 Nr. 3 UStG'),('G02','§ 4 Nr. 12 UStG'),('G02','§ 4 Nr. 16 UStG'),('G02','§ 15 Abs. 4 UStG');

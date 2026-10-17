@@ -1,117 +1,156 @@
-# Datenbankschema – Tax Company Profile (Prototyp)
+-- =====================================================================
+-- Scan-Teil (Urteile, Embeddings, Alerts) und Sichten (Block L u. a.)
+-- =====================================================================
+SET search_path = profil, public;
 
-PostgreSQL-Schema `profil` für das Company Profile nach der Tax Due Diligence. Es bildet **genau die Prototyp-Felder** ab, die in den beiden Lösungsprofilen (Nordhafen, Marschland) verwendet werden, und ist mit beiden Lösungen als Testdaten befüllt.
+-- ---------------------------------------------------------------------
+-- Urteile – verschlagwortet mit DEMSELBEN Vokabular wie das Profil
+-- ---------------------------------------------------------------------
+CREATE TABLE urteil (
+    id                   serial PRIMARY KEY,
+    gericht              text NOT NULL CHECK (gericht IN ('BFH','EuGH','BVerfG','FG')),
+    aktenzeichen         text NOT NULL UNIQUE,
+    datum                date,
+    status               text NOT NULL CHECK (status IN ('anhaengig','rechtskraeftig','vorlage')),
+    steuerarten          steuerart[] NOT NULL,
+    richtung             text CHECK (richtung IN ('zugunsten','zulasten','neutral')),
+    zeitliche_anwendung  text,
+    verwaltung_reaktion  text CHECK (verwaltung_reaktion IN ('bstbl_veroeffentlicht','nichtanwendungserlass','bmf_schreiben','keine')),
+    rechtsformen         text[],
+    rollen               rolle[],
+    kernaussage          text,
+    quelle_url           text,
+    erfasst_am           date DEFAULT current_date
+);
+CREATE TABLE urteil_norm (
+    urteil_id int REFERENCES urteil(id) ON DELETE CASCADE,
+    norm_code text REFERENCES norm(code),
+    PRIMARY KEY (urteil_id, norm_code)
+);
+CREATE TABLE urteil_merkmal (
+    urteil_id    int REFERENCES urteil(id) ON DELETE CASCADE,
+    merkmal_code text REFERENCES merkmal_def(code),
+    PRIMARY KEY (urteil_id, merkmal_code)
+);
+-- Ein Urteil enthält oft mehrere Rechtsfragen → ein Vektor pro Rechtsfrage
+CREATE TABLE urteil_rechtsfrage (
+    id          serial PRIMARY KEY,
+    urteil_id   int NOT NULL REFERENCES urteil(id) ON DELETE CASCADE,
+    nr          smallint NOT NULL,
+    leitsatz    text NOT NULL,
+    normalisiert text            -- Sachverhalt + Norm + Rechtsfolge, gleiches Format wie Profilseite
+);
 
-> Alle Inhalte sind fiktiv (Tax Tech Hackathon).
+-- ---------------------------------------------------------------------
+-- Embeddings auf Feldebene (Findings, Merkmale, Rechtsfragen).
+-- Hinweis: Mit pgvector die Spalte als vector(1536) anlegen und einen HNSW-Index setzen.
+-- Merkmale mit Wert 'nein' werden NICHT embedded.
+-- ---------------------------------------------------------------------
+CREATE TABLE embedding (
+    id           serial PRIMARY KEY,
+    objekt_typ   text NOT NULL CHECK (objekt_typ IN ('finding','merkmal_wert','rechtsbehelf','urteil_rechtsfrage')),
+    objekt_id    int NOT NULL,
+    gesellschaft_id int REFERENCES gesellschaft(id) ON DELETE CASCADE,  -- Filter-Metadaten
+    steuerarten  steuerart[],
+    normen       text[],
+    jahre        int4range,
+    offen        boolean,                         -- Jahr noch änderbar?
+    modell       text NOT NULL,
+    vektor       real[] NOT NULL,
+    text_basis   text NOT NULL,
+    erstellt_am  timestamptz DEFAULT now(),
+    UNIQUE (objekt_typ, objekt_id, modell)
+);
 
-## Dateien und Reihenfolge
+-- ---------------------------------------------------------------------
+-- Alerts (Dashboard) und Alert-Historie (Block M)
+-- ---------------------------------------------------------------------
+CREATE TABLE alert (
+    id                 serial PRIMARY KEY,
+    urteil_id          int REFERENCES urteil(id),
+    gesellschaft_id    int NOT NULL REFERENCES gesellschaft(id) ON DELETE CASCADE,
+    finding_id         int REFERENCES finding(id),
+    ausloeser          text NOT NULL CHECK (ausloeser IN ('urteil','profil_update','frist')),
+    match_typ          text CHECK (match_typ IN ('aktenzeichen','regel','semantisch')),
+    aehnlichkeit       numeric(5,4),
+    handlungsfaehig    boolean,
+    frist              date,
+    materialitaet_eur  numeric(15,2),
+    begruendung        text,
+    status             text NOT NULL DEFAULT 'neu' CHECK (status IN ('neu','bestaetigt','verworfen','versendet')),
+    verworfen_grund    text,
+    bearbeitet_von     text,
+    bearbeitet_am      timestamptz,
+    termin_vorschlag   timestamptz,
+    erstellt_am        timestamptz DEFAULT now(),
+    UNIQUE (urteil_id, gesellschaft_id, finding_id)
+);
 
-| Datei | Inhalt |
-|---|---|
-| `01_schema.sql` | Typen, Vokabular-Tabellen, Deal, Dokumente, alle Profil-Tabellen (Blöcke A–K, M) |
-| `02_vokabular.sql` | Feste Listen: Dokumentklassen mit **Rang**, Normen, Merkmale (Feld-IDs) und deren Normbezug |
-| `03_scan_und_views.sql` | Urteile, Embeddings, Alerts; Sichten für Block L (Fristen), offene Jahre, Direkttreffer, offene Punkte |
-| `10_seed_nordhafen.sql` | Lösungsprofil Nordhafen Logistik GmbH |
-| `11_seed_marschland.sql` | Lösungsprofil Marschland (Holding, Seniorenzentren, Immobilien) |
-| `90_tests.sql` | 26 automatische Prüfungen gegen die Lösungsschlüssel inkl. aller Fallstricke |
+-- ---------------------------------------------------------------------
+-- Sichten
+-- ---------------------------------------------------------------------
+-- B01: aktuelle Gesellschafter
+CREATE VIEW v_gesellschafter_aktuell AS
+SELECT g.name AS gesellschaft, b.gesellschafter, b.quote_prozent, b.gueltig_ab
+FROM beteiligung b JOIN gesellschaft g ON g.id = b.gesellschaft_id
+WHERE b.gueltig_bis IS NULL;
 
-```bash
-for f in 01_schema.sql 02_vokabular.sql 03_scan_und_views.sql 10_seed_nordhafen.sql 11_seed_marschland.sql 90_tests.sql; do
-  psql -v ON_ERROR_STOP=1 -f $f
-done
-```
+-- Block L: alle Fristen aus den anderen Blöcken berechnet, mit Alert-Vorlauf
+CREATE VIEW v_fristen AS
+WITH f AS (
+  SELECT v.gesellschaft_id, 'Festsetzungsverjährung ' || v.steuerart || ' ' || v.jahr AS frist,
+         v.festsetzungsfrist_ende AS datum, interval '6 months' AS vorlauf,
+         v.ablaufhemmung AS hinweis, 'C06' AS feld
+  FROM veranlagung v WHERE v.festsetzungsfrist_ende IS NOT NULL AND NOT v.verjaehrt
+  UNION ALL
+  SELECT u.gesellschaft_id, 'Sperrfrist ' || u.sperrfrist_norm || ' – ' || u.gegenstand, u.sperrfrist_ende,
+         interval '12 months', u.sperrfrist_status, 'E06'
+  FROM umwandlung u WHERE u.sperrfrist_ende IS NOT NULL
+  UNION ALL
+  SELECT o.organgesellschaft_id, 'Mindestlaufzeit GAV ' || o.organtraeger_name || ' / ' || o.organgesellschaft_name,
+         o.mindestlaufzeit_bis, interval '12 months', o.status, 'B04'
+  FROM organschaft o WHERE o.mindestlaufzeit_bis IS NOT NULL AND o.status = 'besteht'
+  UNION ALL
+  SELECT f.gesellschaft_id, 'SPA: ' || s.art || coalesce(' (' || f.finding_code || ')', ''), s.frist_ende,
+         interval '6 months', s.fundstelle_spa, 'K11'
+  FROM spa_absicherung s LEFT JOIN finding f ON f.id = s.finding_id WHERE s.frist_ende IS NOT NULL
+)
+SELECT g.name AS gesellschaft, f.feld, f.frist, f.datum, (f.datum - f.vorlauf)::date AS alert_ab, f.hinweis,
+       CASE WHEN f.datum < current_date THEN 'abgelaufen'
+            WHEN f.hinweis IN ('einspruch_171_3a','aussenpruefung_171_4') THEN 'gehemmt'
+            WHEN f.hinweis = 'ausgeloest' THEN 'ausgeloest'
+            WHEN current_date >= f.datum - f.vorlauf THEN 'alert'
+            ELSE 'laeuft' END AS status
+FROM f LEFT JOIN gesellschaft g ON g.id = f.gesellschaft_id;
 
-Getestet mit PostgreSQL 16.
+-- Offene Jahre: Grundlage für die Handlungsfähigkeit
+CREATE VIEW v_offene_jahre AS
+SELECT g.name AS gesellschaft, v.jahr, v.steuerart, v.bescheidart, v.vorbehalt_164, v.vorlaeufig_165, v.vorlaeufig_az,
+       v.festsetzungsfrist_ende, v.ablaufhemmung
+FROM veranlagung v JOIN gesellschaft g ON g.id = v.gesellschaft_id
+WHERE NOT v.verjaehrt AND (v.vorbehalt_164 = 'ja' OR v.vorlaeufig_165 OR v.ablaufhemmung IS NOT NULL OR v.stand <> 'veranlagt');
 
-## Designentscheidungen
+-- Alle Aktenzeichen im Profil, gegen die ein neues Urteil exakt geprüft wird (Matching-Regel 1)
+CREATE VIEW v_aktenzeichen_im_profil AS
+SELECT r.gesellschaft_id, r.musterverfahren_az AS aktenzeichen, 'C05 Einspruch ruht' AS fundort, r.id AS objekt_id
+FROM rechtsbehelf r WHERE r.musterverfahren_az IS NOT NULL
+UNION ALL
+SELECT v.gesellschaft_id, v.vorlaeufig_az, 'C03 Vorläufigkeit ' || v.steuerart || ' ' || v.jahr, v.id
+FROM veranlagung v WHERE v.vorlaeufig_az IS NOT NULL
+UNION ALL
+SELECT f.gesellschaft_id, f.musterverfahren_az, 'K ' || f.finding_code, f.id
+FROM finding f WHERE f.musterverfahren_az IS NOT NULL;
 
-1. **Ein Profil pro Gesellschaft.** `gesellschaft` hängt an einem `deal`. Organschaft, Verlustvorträge und Verfahrensstand liegen immer bei der einzelnen Gesellschaft.
-2. **Drei Zustände.** `merkmal_wert.wert` ist `ja | nein | unbekannt`. Schweigen einer Quelle ergibt `unbekannt`, nie `nein`. Die Details (Listen) stehen in eigenen Tabellen.
-3. **Festes Vokabular.** Normen (`norm`) und Merkmale (`merkmal_def`, Codes = Feld-IDs wie `B04`) sind Referenztabellen. Urteile werden mit **denselben** Codes verschlagwortet (`urteil_norm`, `urteil_merkmal`), damit der Abgleich deterministisch funktioniert.
-4. **Provenienz an jedem Fakt (Block M).** Jede Faktentabelle trägt `quelle_dok`, `fundstelle`, `stand`, `konfidenz`, `bestaetigt_von`, `bestaetigt_am`, `gueltig_bis`.
-5. **Rangfolge der Quellen.** `dokument_klasse.rang` (1 = Bescheid/Register/Vertrag … 3 = DD-Report … 9 = Entwurf). Konflikte werden in `pruefhinweis` mit Entscheidung festgehalten.
-6. **Block L wird berechnet, nicht erfasst.** `v_fristen` sammelt Verjährung, Sperrfristen, GAV-Mindestlaufzeit und SPA-Fristen und markiert `alert`, `gehemmt`, `ausgeloest`, `abgelaufen`.
-7. **Aktenzeichen als harter Schlüssel.** `v_aktenzeichen_im_profil` sammelt alle Musterverfahren aus Einsprüchen (C05), Vorläufigkeiten (C03) und Findings (K). `v_direkte_treffer` verknüpft sie mit neuen Urteilen.
-8. **Embeddings auf Feldebene.** `embedding` speichert je Finding, Merkmal oder Rechtsfrage einen Vektor mit Filter-Metadaten (Steuerarten, Normen, Jahre, offen ja/nein). Für den Produktivbetrieb die Spalte mit pgvector als `vector(1536)` anlegen. Merkmale mit `nein` werden nicht embedded.
+-- Direkte Treffer: neues Urteil ↔ Aktenzeichen im Profil
+CREATE VIEW v_direkte_treffer AS
+SELECT u.aktenzeichen, u.status AS urteil_status, g.name AS gesellschaft, a.fundort
+FROM urteil u JOIN v_aktenzeichen_im_profil a ON a.aktenzeichen = u.aktenzeichen
+JOIN gesellschaft g ON g.id = a.gesellschaft_id;
 
-## Mapping Feld-ID → Tabelle
-
-| Feld | Bedeutung | Tabelle / Spalte |
-|---|---|---|
-| A01 | Deal-Typ, Signing, Closing | `deal.deal_typ, signing_am, closing_am` |
-| A02 | DD-Art und Stand | `deal.dd_art, dd_umfang, dd_ersteller, dd_report_am, dd_datenraum_stichtag, dd_zeitraum_von/bis` |
-| A04 | Name, Sitz, Land | `gesellschaft.name, strasse, plz, ort, land, registergericht, registernummer` |
-| A05 | Rechtsform | `gesellschaft.rechtsform` |
-| A06 | Rolle im Konzern | `gesellschaft.rolle` |
-| A07 | Branche | `gesellschaft.wz_code, wz_bezeichnung` |
-| B01 | Gesellschafter aktuell | `beteiligung` mit `gueltig_bis IS NULL` → Sicht `v_gesellschafter_aktuell` |
-| B02 | Anteilswechsel 10 Jahre | `anteilswechsel` |
-| B04 | KSt-/GewSt-Organschaft | `merkmal_wert (B04)` + `organschaft (art = kst_gewst)` |
-| B05 | USt-Organschaft | `merkmal_wert (B05)` + `organschaft (art = ust)` |
-| B07 | Auslandsbezug | `merkmal_wert (B07)` + `auslandsbezug` (Status auch `unbekannt`) |
-| C01–C03, C06 | Veranlagung, Vorbehalt, Vorläufigkeit, Verjährung | `veranlagung` (Gesellschaft × Jahr × Steuerart × Bescheidart) |
-| C04, C05 | Einsprüche, ruhende Verfahren | `merkmal_wert (C04)` + `rechtsbehelf.musterverfahren_az` |
-| C07, C08 | Letzte BP und Feststellungen | `aussenpruefung (status = abgeschlossen)` + `pruefungsfeststellung` |
-| C09 | Laufende/angeordnete BP | `merkmal_wert (C09)` + `aussenpruefung (status = angeordnet/laufend)` |
-| D01, D02, D04 | Verlustvorträge, Zinsvortrag | `steuerattribut` (mit `festgestellt`, `sperre`) |
-| E01 | Gesellschafterdarlehen | `merkmal_wert (E01)` + `darlehen` (inkl. Abtretung) |
-| E03 | Mieten, Leasing | `merkmal_wert (E03)` + `nutzungsvertrag` (davon beweglich/unbeweglich) |
-| E05 | Grundbesitz | `merkmal_wert (E05)` + `grundstueck` |
-| E05b | Erweiterte Kürzung | `merkmal_wert (E05b)` + `veranlagung.erweiterte_kuerzung` je Jahr |
-| E06 | Umwandlungen 7 Jahre | `merkmal_wert (E06)` + `umwandlung` (Sperrfrist, Status) |
-| G02 | Steuerfreie Umsätze | `merkmal_wert (G02)` + `ust_steuerfrei` |
-| K | Risikoregister | `finding` + `finding_norm` + `finding_merkmal` + `spa_absicherung` |
-| L | Fristen | Sicht `v_fristen` |
-| M | Metadaten | Provenienz-Spalten, `gesellschaft.verantwortlicher_stb …`, `pruefhinweis`, `alert` (Historie) |
-
-## ER-Diagramm
-
-```mermaid
-erDiagram
-    deal ||--o{ gesellschaft : umfasst
-    deal ||--o{ dokument : enthaelt
-    dokument_klasse ||--o{ dokument : klassifiziert
-    deal ||--o{ finding : hat
-    deal ||--o{ spa_absicherung : regelt
-    finding ||--o{ spa_absicherung : abgesichert_durch
-    finding ||--o{ finding_norm : getaggt
-    finding ||--o{ finding_merkmal : getaggt
-
-    gesellschaft ||--o{ merkmal_wert : "ja/nein/unbekannt"
-    merkmal_def ||--o{ merkmal_wert : definiert
-    merkmal_def ||--o{ merkmal_norm : bezieht
-    norm ||--o{ merkmal_norm : ""
-
-    gesellschaft ||--o{ beteiligung : B01
-    gesellschaft ||--o{ anteilswechsel : B02
-    gesellschaft ||--o{ organschaft : "B04/B05"
-    gesellschaft ||--o{ auslandsbezug : B07
-    gesellschaft ||--o{ veranlagung : "C01-C03,C06"
-    veranlagung ||--o{ rechtsbehelf : "C04/C05"
-    gesellschaft ||--o{ aussenpruefung : "C07/C09"
-    aussenpruefung ||--o{ pruefungsfeststellung : C08
-    gesellschaft ||--o{ steuerattribut : D
-    gesellschaft ||--o{ darlehen : E01
-    gesellschaft ||--o{ nutzungsvertrag : E03
-    gesellschaft ||--o{ grundstueck : E05
-    gesellschaft ||--o{ umwandlung : E06
-    gesellschaft ||--o{ ust_steuerfrei : G02
-    gesellschaft ||--o{ pruefhinweis : M
-
-    urteil ||--o{ urteil_norm : getaggt
-    urteil ||--o{ urteil_merkmal : getaggt
-    urteil ||--o{ urteil_rechtsfrage : enthaelt
-    urteil ||--o{ alert : loest_aus
-    gesellschaft ||--o{ alert : betrifft
-    finding ||--o{ alert : bezieht
-```
-
-## Nützliche Abfragen
-
-```sql
-SET search_path = profil;
-SELECT * FROM v_fristen WHERE status IN ('alert','gehemmt') ORDER BY datum;   -- Block L
-SELECT * FROM v_offene_jahre WHERE gesellschaft = 'Marschland Immobilien GmbH'; -- Handlungsfähigkeit
-SELECT * FROM v_offene_punkte;                                                  -- unbekannt + Prüfhinweise
-SELECT * FROM v_direkte_treffer;                                                -- nach Einspielen neuer Urteile
-```
+-- Offene Punkte für den Steuerberater: unbekannte Merkmale + Prüfhinweise
+CREATE VIEW v_offene_punkte AS
+SELECT g.name AS gesellschaft, m.merkmal_code AS feld, 'unbekannt' AS art, m.kurztext AS beschreibung
+FROM merkmal_wert m JOIN gesellschaft g ON g.id = m.gesellschaft_id WHERE m.wert = 'unbekannt'
+UNION ALL
+SELECT g.name, p.feld, p.art, p.beschreibung
+FROM pruefhinweis p LEFT JOIN gesellschaft g ON g.id = p.gesellschaft_id WHERE p.status = 'offen';

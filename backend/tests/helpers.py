@@ -2,6 +2,7 @@
 real fixtures come from a teammate later. No network is ever used."""
 
 import asyncio
+import json
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,8 @@ import openpyxl
 from PIL import Image, ImageDraw
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
+
+from app.models.document import DocStatus, DocType, Document, Page, PageKind
 
 SENTENCE = "Die Muster GmbH betreibt ein Restaurant in Berlin mit 25 Mitarbeitern."
 
@@ -78,15 +81,28 @@ def api_error(cls: type, status: int) -> Exception:
     return cls("boom", response=httpx2.Response(status, request=request), body=None)
 
 
+class Reply(SimpleNamespace):
+    """A scripted answer with optional edge cases: `refusal`, `finish_reason`."""
+
+    def __init__(
+        self, content: str | None, finish_reason: str = "stop", refusal: str | None = None
+    ):
+        super().__init__(content=content, finish_reason=finish_reason, refusal=refusal)
+
+
 class FakeCompletions:
-    def __init__(self, text: str, delay: float, errors: list[Exception]):
+    def __init__(self, text, delay, errors, responses, responder):
         self.text, self.delay, self.errors = text, delay, errors
+        self.responses = responses  # one scripted answer per call, then `text`
+        self.responder = responder  # or: callable(kwargs) -> answer, for every call
         self.calls = 0
+        self.requests: list[dict] = []
         self.in_flight = 0
         self.max_in_flight = 0
 
     async def create(self, **kwargs):
         self.calls += 1
+        self.requests.append(kwargs)
         if self.errors:
             raise self.errors.pop(0)
         self.in_flight += 1
@@ -95,14 +111,91 @@ class FakeCompletions:
             await asyncio.sleep(self.delay)
         finally:
             self.in_flight -= 1
-        message = SimpleNamespace(content=self.text)
+
+        if self.responder is not None:
+            answer = self.responder(kwargs)
+        elif self.responses:
+            answer = self.responses.pop(0)
+        else:
+            answer = self.text
+        if isinstance(answer, BaseException):
+            raise answer
+        reply = answer if isinstance(answer, Reply) else Reply(answer)
+        message = SimpleNamespace(content=reply.content, refusal=reply.refusal)
+        choice = SimpleNamespace(message=message, finish_reason=reply.finish_reason)
         usage = SimpleNamespace(prompt_tokens=100, completion_tokens=20)
-        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
+        return SimpleNamespace(choices=[choice], usage=usage)
 
 
 class FakeClient:
-    """Stands in for AsyncOpenAI: only `chat.completions.create` is used."""
+    """Stands in for AsyncOpenAI: only `chat.completions.create` is used.
 
-    def __init__(self, text: str = "# Seite\n\nGescannter Inhalt", delay: float = 0.0, errors=()):
-        self.completions = FakeCompletions(text, delay, list(errors))
+    Answers are `text` by default; `responses` scripts one answer per call (a string, a
+    `Reply`, or an exception to raise); `responder(kwargs)` computes the answer per call.
+    """
+
+    def __init__(
+        self,
+        text: str = "# Seite\n\nGescannter Inhalt",
+        delay: float = 0.0,
+        errors=(),
+        responses=(),
+        responder=None,
+    ):
+        self.completions = FakeCompletions(text, delay, list(errors), list(responses), responder)
         self.chat = SimpleNamespace(completions=self.completions)
+
+
+def make_document(
+    name: str = "doc.pdf",
+    pages: list[str] | None = None,
+    *,
+    ocr_pages: tuple[int, ...] = (),
+    status: DocStatus = DocStatus.OK,
+    doc_id: str | None = None,
+    warnings: list[str] | None = None,
+) -> Document:
+    """A parsed Document built directly (no file), for agent tests."""
+    pages = [SENTENCE] if pages is None else pages
+    return Document(
+        doc_id=doc_id or f"id-{name}",
+        filename=name,
+        relative_path=name,
+        type=DocType.TEXT_PDF,
+        status=status,
+        pages=[
+            Page(
+                page_no=n,
+                kind=PageKind.OCR if n in ocr_pages else PageKind.TEXT,
+                text=text,
+                needs_review=n in ocr_pages,
+            )
+            for n, text in enumerate(pages, start=1)
+        ],
+        warnings=warnings or [],
+    )
+
+
+def entry(value, page: int = 1, evidence: str = "", confidence: str = "high") -> dict:
+    return {"value": value, "source_page": page, "evidence": evidence, "confidence": confidence}
+
+
+def item(page: int = 1, evidence: str = "", confidence: str = "high", **values) -> dict:
+    """One list entry: item columns plus provenance."""
+    return values | {"source_page": page, "evidence": evidence, "confidence": confidence}
+
+
+DOKUMENT = {"klasse_code": "bescheid", "titel": "Testdokument", "dokument_datum": "2026-02-03"}
+
+
+def answer(dokument: dict | None = None, **fields) -> str:
+    """Agent JSON for tests/fixtures/schema_small.json; scalars not given are null, the
+    list `steuerattribut` defaults to [] (items need art, stichtag, betrag_eur)."""
+    names = ("company_name", "legal_form", "employees", "annual_revenue_eur")
+    payload = {name: fields.get(name) for name in names}
+    payload["steuerattribut"] = [
+        {"art": None, "stichtag": None, "betrag_eur": None} | i
+        for i in fields.get("steuerattribut", [])
+    ]
+    payload["dokument"] = DOKUMENT if dokument is None else dokument
+    return json.dumps(payload)

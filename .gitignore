@@ -1,4 +1,4 @@
 # Local Claude settings (backend/.gitignore covers the Python project)
 .claude/settings.local.json
 CLAUDE.md
-Parsing Implementation Plan.md
+*Plan.md

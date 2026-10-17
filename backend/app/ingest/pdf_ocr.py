@@ -11,18 +11,11 @@ import logging
 import threading
 from pathlib import Path
 
-import openai
 import pypdfium2 as pdfium
 from openai import AsyncOpenAI
-from tenacity import (
-    AsyncRetrying,
-    before_sleep_log,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_random_exponential,
-)
 
 from app.config import Settings
+from app.llm import call_with_retry, token_usage
 from app.models.document import Page, PageKind, TokenUsage
 
 log = logging.getLogger(__name__)
@@ -41,22 +34,7 @@ Rules:
 
 MISSING_KEY_WARNING = "OCR skipped: OPENAI_API_KEY is not set"
 
-# Transient errors worth retrying. APITimeoutError is a subclass of APIConnectionError.
-RETRYABLE_ERRORS = (openai.RateLimitError, openai.APIConnectionError, openai.InternalServerError)
-
 _PDFIUM_LOCK = threading.Lock()  # pypdfium2 is not thread-safe
-
-
-def make_client(settings: Settings) -> AsyncOpenAI | None:
-    """OpenAI client, or None when no key is configured (text-only runs still work)."""
-    if settings.openai_api_key is None:
-        return None
-    # SDK retries are off: tenacity handles them so the semaphore is released during backoff.
-    return AsyncOpenAI(
-        api_key=settings.openai_api_key.get_secret_value(),
-        timeout=settings.openai_timeout_s,
-        max_retries=0,
-    )
 
 
 async def transcribe_pages(
@@ -136,28 +114,14 @@ async def transcribe_image(
             ],
         },
     ]
-    retrying = AsyncRetrying(
-        retry=retry_if_exception_type(RETRYABLE_ERRORS),
-        wait=wait_random_exponential(
-            min=settings.ocr_backoff_min_s, max=settings.ocr_backoff_max_s
-        ),
-        stop=stop_after_attempt(settings.ocr_max_attempts),
-        before_sleep=before_sleep_log(log, logging.WARNING),
-        reraise=True,
+    response = await call_with_retry(
+        lambda: client.chat.completions.create(model=settings.openai_model, messages=messages),
+        slots=slots,
+        max_attempts=settings.ocr_max_attempts,
+        backoff_min_s=settings.ocr_backoff_min_s,
+        backoff_max_s=settings.ocr_backoff_max_s,
     )
-    async for attempt in retrying:
-        with attempt:
-            async with slots:  # hold a slot only while the request is in flight
-                response = await client.chat.completions.create(
-                    model=settings.openai_model, messages=messages
-                )
-
-    usage = response.usage
-    tokens = TokenUsage(
-        input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-        output_tokens=getattr(usage, "completion_tokens", 0) or 0,
-    )
-    return (response.choices[0].message.content or "").strip(), tokens
+    return (response.choices[0].message.content or "").strip(), token_usage(response)
 
 
 async def _transcribe_page(
