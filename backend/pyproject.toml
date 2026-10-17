@@ -6,6 +6,7 @@ readme = "README.md"
 # TODO: confirm Python version with the team (pinned to 3.12 in .python-version).
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.143.3",
     "openai>=3.0",
     "openpyxl>=3.1",
     "pdfplumber>=0.11",
@@ -15,7 +16,9 @@ dependencies = [
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
     "pypdfium2>=4.30",
+    "python-multipart>=0.0.32",
     "tenacity>=9.0",
+    "uvicorn>=0.30",
 ]
 
 [dependency-groups]

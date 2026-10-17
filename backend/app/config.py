@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     ocr_page_cap: int = Field(default=30, ge=0)
     excel_row_cap: int = Field(default=2000, gt=0)
 
+    # Uploads live below this folder; step 10 deletes files only inside it.
     data_dir: Path = Path("data")
 
     # Extraction agents (steps 5 to 7).
@@ -79,6 +80,52 @@ class Settings(BaseSettings):
     # TODO: confirm the rounding rule; coarsest granularity from trailing zeros that still
     # counts as rounding (see app/profile/values.py).
     rounding_max_granularity: int = Field(default=1000, gt=0)
+
+    # Step 9: one descriptive sentence and one vector per feature.
+    # TODO: verify the embedding model id and its dimension (the schema README assumes 1536).
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimension: int = Field(default=1536, gt=0)
+    # TODO: tune batch size, sentence caps, reasoning effort and concurrency on real runs.
+    embedding_batch_size: int = Field(default=64, gt=0)
+    sentence_max_words: int = Field(default=40, gt=0)
+    sentence_max_chars: int = Field(default=400, gt=0)
+    sentence_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "low"
+    embed_concurrency: int = Field(default=5, gt=0)
+    # A busy marker older than this counts as left over from a crash (confirm, embed, cleanup).
+    # TODO: tune the busy lock.
+    step_lock_timeout_s: float = Field(default=3600, gt=0)
+    # Statute of a norm -> tax types for the embedding filter metadata (steuerarten).
+    # TODO: complete and review the mapping (LSt, AO and other statutes).
+    statute_tax_types: dict[str, list[str]] = {
+        "KStG": ["KSt"],
+        "GewStG": ["GewSt"],
+        "UStG": ["USt"],
+        "GrEStG": ["GrESt"],
+        "EStG": ["ESt"],
+    }
+
+    # Single-user platform (one Steuerberater, no login): the label stamped as bestaetigt_von
+    # and in the audit log by the HTTP API, which takes no person from the caller.
+    advisor_label: str = Field(default="Steuerberater", min_length=1)
+
+    # HTTP API and upload layer (step 0).
+    # TODO: hosting and start command outside local development (deferred with deployment).
+    api_host: str = "127.0.0.1"
+    api_port: int = Field(default=8000, gt=0, lt=65536)
+    # TODO: the UI team's dev URL and port.
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
+    # TODO: tune upload limits (per-file size is max_file_mb above) and the global run cap.
+    upload_max_total_mb: float = Field(default=500, gt=0)
+    upload_max_files: int = Field(default=300, gt=0)
+    upload_max_path_chars: int = Field(default=240, gt=0)
+    upload_max_path_depth: int = Field(default=8, gt=0)
+    upload_chunk_bytes: int = Field(default=1024 * 1024, gt=0)
+    max_active_runs: int = Field(default=2, gt=0)
 
     # TODO: Supabase vs local Docker. Both work through database_url with repository=postgres.
     repository: Literal["memory", "postgres"] = "memory"

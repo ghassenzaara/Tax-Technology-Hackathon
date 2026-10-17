@@ -1,0 +1,2951 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DD Monitor API",
+    "description": "Backend of the DD regulatory monitoring platform (steps 0 to 10).\n\nFlow: Upload, poll Progress every 1 to 2 seconds until the run is finished, Draft, Confirm\n(embedding and cleanup then run in the background; Progress shows the project state),\nProfile, Update, Audit. Ids are opaque strings. No authentication (single user).\n\nEvery error has the shape `{code, message, details, error_id}`. Codes:\n`validation`, `bad_request`, `empty_upload`, `upload_too_large`, `not_found`, `wrong_state`, `stale_draft`, `stale_profile`, `busy`, `run_active`, `publish_failed`, `not_supported`, `database_unavailable`, `method_not_allowed`, `internal_error`.\n",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/uploads": {
+      "post": {
+        "tags": [
+          "upload and progress"
+        ],
+        "summary": "Upload a data room and start the run",
+        "description": "Stores every file below a new company folder (relative paths kept), creates the\ncompany id and starts the run in the background. Unsupported file types are accepted and\nreported later as unsupported; unsafe paths, duplicates and files over a limit are\nrejected one by one with a reason. Poll Progress every 1 to 2 seconds.",
+        "operationId": "upload_api_uploads_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_api_uploads_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies/{company_id}/rerun": {
+      "post": {
+        "tags": [
+          "upload and progress"
+        ],
+        "summary": "Process the stored files again (before confirmation only)",
+        "operationId": "rerun_api_companies__company_id__rerun_post",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies/{company_id}/progress": {
+      "get": {
+        "tags": [
+          "upload and progress"
+        ],
+        "summary": "Project state, latest run and one record per document",
+        "operationId": "progress_api_companies__company_id__progress_get",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies/{company_id}/draft": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "The profile draft for review, with sources and evidence quotes",
+        "description": "Fields with status, candidate groups with sources and evidence quotes (untrusted\ndocument text: render as plain text), needs-review flags, non-binding suggestions, list\nrows, the draft version, the open decisions and the open hints. Only in state\npublished after a finished run.",
+        "operationId": "draft_api_companies__company_id__draft_get",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies/{company_id}/confirm": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Confirm the profile with the advisor's decisions",
+        "description": "All or nothing. Every open decision of the Draft call needs one decision (nothing\nis pre-selected). Problems come back per field (code validation); a newer draft answers\nstale_draft. On success embedding and cleanup start in the background.",
+        "operationId": "confirm_api_companies__company_id__confirm_post",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "The client list",
+        "operationId": "companies_api_companies_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies/{company_id}/profile": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "The confirmed profile with citations and its version",
+        "description": "Values with their citation (file and page in `fundstelle`, the cited document in\n`quelle`; advisor-entered values say so instead), the profile version needed by Update,\nthe \"embeddings stale\" flag and the audit log. Never evidence quotes or conflict\nalternatives.",
+        "operationId": "profile_api_companies__company_id__profile_get",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmedProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies/{company_id}/profile/update": {
+      "post": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Update entries of a confirmed profile",
+        "description": "All or nothing; there is no undo (ask \"are you sure\" first). Refused before\nconfirmation (wrong_state), while confirm, embedding or cleanup runs (busy) and on a\nstale profile version (stale_profile); invalid values come back per field. The vectors\nare refreshed in the background; Progress shows \"embeddings stale\" until then.",
+        "operationId": "update_api_companies__company_id__profile_update_post",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "The audit log, newest first",
+        "description": "Confirmations, profile changes (field, old and new value, reason), sent emails and\ntemplate edits: what and when.",
+        "operationId": "audit_api_audit_get",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AuditKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AcceptedFile": {
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "relative_path",
+          "size"
+        ],
+        "title": "AcceptedFile"
+      },
+      "AppliedDecision": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/DecisionAction"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "typed": {
+            "type": "boolean",
+            "title": "Typed",
+            "default": false
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "text"
+        ],
+        "title": "AppliedDecision",
+        "description": "An advisor decision applied to a draft field; set only on the confirmed draft."
+      },
+      "AuditEntry": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuditKind"
+          },
+          "company_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Id"
+          },
+          "update_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Id"
+          },
+          "acted_by": {
+            "type": "string",
+            "title": "Acted By"
+          },
+          "acted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acted At"
+          },
+          "table_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table Name"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "row_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Id"
+          },
+          "row_key": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Key"
+          },
+          "change_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Kind"
+          },
+          "old_value": {
+            "title": "Old Value"
+          },
+          "new_value": {
+            "title": "New Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "profile_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Version"
+          },
+          "outreach_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outreach Id"
+          },
+          "screened_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screened At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "acted_by"
+        ],
+        "title": "AuditEntry",
+        "description": "A row of `pipeline.audit_log`. `id` and `acted_at` are set by the database."
+      },
+      "AuditKind": {
+        "type": "string",
+        "enum": [
+          "profile_confirmed",
+          "profile_changed",
+          "email_sent",
+          "template_edited"
+        ],
+        "title": "AuditKind"
+      },
+      "AuditList": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "title": "AuditList"
+      },
+      "Body_upload_api_uploads_post": {
+        "properties": {
+          "files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "contentMediaType": "application/octet-stream"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files",
+            "description": "every file of the DD folder (repeat the field once per file)"
+          },
+          "paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paths",
+            "description": "relative path of each file, same order as `files` (for example 'Steuern/Bescheide/KSt 2022.pdf'); without it the file name of each part is used"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name",
+            "description": "optional project name; the company id is made from it"
+          }
+        },
+        "type": "object",
+        "title": "Body_upload_api_uploads_post"
+      },
+      "Candidate": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "field_name": {
+            "type": "string",
+            "title": "Field Name"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "evidence": {
+            "type": "string",
+            "title": "Evidence"
+          },
+          "source_doc": {
+            "type": "string",
+            "title": "Source Doc"
+          },
+          "source_filename": {
+            "type": "string",
+            "title": "Source Filename"
+          },
+          "source_page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Source Page"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "needs_review": {
+            "type": "boolean",
+            "title": "Needs Review",
+            "default": false
+          },
+          "chunk_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Chunk Index",
+            "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "field_name",
+          "value",
+          "evidence",
+          "source_doc",
+          "source_filename",
+          "source_page",
+          "confidence"
+        ],
+        "title": "Candidate",
+        "description": "One value for one field from one document: a row of `field_candidates`."
+      },
+      "CandidateGroup": {
+        "properties": {
+          "value": {
+            "title": "Value"
+          },
+          "documents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "rounding_equivalent": {
+            "type": "boolean",
+            "title": "Rounding Equivalent",
+            "default": false
+          },
+          "max_confidence": {
+            "type": "number",
+            "title": "Max Confidence",
+            "default": 0.0
+          },
+          "best_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Rank"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "documents",
+          "candidates"
+        ],
+        "title": "CandidateGroup",
+        "description": "Candidates that count as the same value. `value` is the most precise member\n(for list items: the most complete one, gaps filled from the other members)."
+      },
+      "CellChoice": {
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "title": "CellChoice",
+        "description": "One cell of a list row: take it from a candidate group, or type it. Exactly one."
+      },
+      "Change": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChangeKind"
+          },
+          "row_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Id"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "cells": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cells",
+            "default": {}
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "kind"
+        ],
+        "title": "Change"
+      },
+      "ChangeKind": {
+        "type": "string",
+        "enum": [
+          "edit",
+          "add",
+          "remove",
+          "end"
+        ],
+        "title": "ChangeKind"
+      },
+      "CompanyList": {
+        "properties": {
+          "companies": {
+            "items": {
+              "$ref": "#/components/schemas/CompanySummary"
+            },
+            "type": "array",
+            "title": "Companies"
+          }
+        },
+        "type": "object",
+        "required": [
+          "companies"
+        ],
+        "title": "CompanyList"
+      },
+      "CompanySummary": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embeddings_stale": {
+            "type": "boolean",
+            "title": "Embeddings Stale",
+            "default": false
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id"
+        ],
+        "title": "CompanySummary"
+      },
+      "ConfirmBody": {
+        "properties": {
+          "draft_version": {
+            "type": "string",
+            "title": "Draft Version"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": "array",
+            "title": "Decisions",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "draft_version"
+        ],
+        "title": "ConfirmBody",
+        "description": "The advisor's final choice per open decision (see the Draft call)."
+      },
+      "ConfirmResult": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "confirmed_by": {
+            "type": "string",
+            "title": "Confirmed By"
+          },
+          "draft_version": {
+            "type": "string",
+            "title": "Draft Version"
+          },
+          "fields_accepted": {
+            "type": "integer",
+            "title": "Fields Accepted",
+            "default": 0
+          },
+          "conflicts_resolved": {
+            "type": "integer",
+            "title": "Conflicts Resolved",
+            "default": 0
+          },
+          "values_typed": {
+            "type": "integer",
+            "title": "Values Typed",
+            "default": 0
+          },
+          "fields_left_empty": {
+            "type": "integer",
+            "title": "Fields Left Empty",
+            "default": 0
+          },
+          "rows_dropped": {
+            "type": "integer",
+            "title": "Rows Dropped",
+            "default": 0
+          },
+          "hints_closed": {
+            "type": "integer",
+            "title": "Hints Closed",
+            "default": 0
+          },
+          "hints_open": {
+            "type": "integer",
+            "title": "Hints Open",
+            "default": 0
+          },
+          "rows": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Rows",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "confirmed_by",
+          "draft_version"
+        ],
+        "title": "ConfirmResult"
+      },
+      "ConfirmedProfile": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProjectState"
+          },
+          "profile_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Version"
+          },
+          "embeddings_stale": {
+            "type": "boolean",
+            "title": "Embeddings Stale"
+          },
+          "scalars": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Scalars"
+          },
+          "scalar_rows": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProfileRow"
+            },
+            "type": "object",
+            "title": "Scalar Rows"
+          },
+          "lists": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/ProfileRow"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Lists"
+          },
+          "audit": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "type": "array",
+            "title": "Audit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "state",
+          "profile_version",
+          "embeddings_stale",
+          "scalars",
+          "scalar_rows",
+          "lists",
+          "audit"
+        ],
+        "title": "ConfirmedProfile",
+        "description": "Read side after confirmation: values, citations, version and the audit log."
+      },
+      "Decision": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "action": {
+            "$ref": "#/components/schemas/DecisionAction"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "cells": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CellChoice"
+            },
+            "type": "object",
+            "title": "Cells",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "action"
+        ],
+        "title": "Decision",
+        "description": "The advisor's choice for one scalar field or one list row."
+      },
+      "DecisionAction": {
+        "type": "string",
+        "enum": [
+          "choose",
+          "value",
+          "leave_empty",
+          "accept",
+          "edit",
+          "drop"
+        ],
+        "title": "DecisionAction",
+        "description": "What the advisor decided for one field or list row (step 8)."
+      },
+      "DocumentCitation": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "dateiname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dateiname"
+          },
+          "titel": {
+            "type": "string",
+            "title": "Titel"
+          },
+          "klasse_code": {
+            "type": "string",
+            "title": "Klasse Code"
+          },
+          "dokument_datum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dokument Datum"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "titel",
+          "klasse_code"
+        ],
+        "title": "DocumentCitation",
+        "description": "The `dokument` row a value cites: the advisor re-checks it in their own copy."
+      },
+      "DocumentProgress": {
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "parse_status": {
+            "type": "string",
+            "title": "Parse Status"
+          },
+          "extraction_status": {
+            "type": "string",
+            "title": "Extraction Status"
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "default": []
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "relative_path",
+          "parse_status",
+          "extraction_status"
+        ],
+        "title": "DocumentProgress"
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Details",
+            "default": []
+          },
+          "error_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody"
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "validation",
+          "bad_request",
+          "empty_upload",
+          "upload_too_large",
+          "not_found",
+          "wrong_state",
+          "stale_draft",
+          "stale_profile",
+          "busy",
+          "run_active",
+          "publish_failed",
+          "not_supported",
+          "database_unavailable",
+          "method_not_allowed",
+          "internal_error"
+        ],
+        "title": "ErrorCode"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "ErrorDetail"
+      },
+      "ExtractionStatus": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "partial",
+          "failed",
+          "skipped",
+          "write_failed"
+        ],
+        "title": "ExtractionStatus"
+      },
+      "FieldResult": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FieldStatus"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateGroup"
+            },
+            "type": "array",
+            "title": "Groups",
+            "default": []
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion"
+          },
+          "rounding_equivalent": {
+            "type": "boolean",
+            "title": "Rounding Equivalent",
+            "default": false
+          },
+          "needs_review": {
+            "type": "boolean",
+            "title": "Needs Review",
+            "default": false
+          },
+          "intra_document_conflict": {
+            "type": "boolean",
+            "title": "Intra Document Conflict",
+            "default": false
+          },
+          "key": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FieldResult"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "default": []
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppliedDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "FieldResult"
+      },
+      "FieldStatus": {
+        "type": "string",
+        "enum": [
+          "missing",
+          "single_source",
+          "confirmed",
+          "conflict"
+        ],
+        "title": "FieldStatus"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "database": {
+            "type": "string",
+            "title": "Database"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "database"
+        ],
+        "title": "Health"
+      },
+      "HintRow": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "art": {
+            "type": "string",
+            "title": "Art"
+          },
+          "feld": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feld"
+          },
+          "beschreibung": {
+            "type": "string",
+            "title": "Beschreibung"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "art",
+          "beschreibung"
+        ],
+        "title": "HintRow",
+        "description": "An open `pruefhinweis` row of the company (profil schema)."
+      },
+      "IncompleteDocument": {
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExtractionStatus"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "doc_id",
+          "filename",
+          "status",
+          "reason"
+        ],
+        "title": "IncompleteDocument"
+      },
+      "OpenDecision": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "cells": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cells",
+            "default": []
+          },
+          "allowed": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionAction"
+            },
+            "type": "array",
+            "title": "Allowed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "kind",
+          "allowed"
+        ],
+        "title": "OpenDecision",
+        "description": "Something the advisor must decide before the profile can be confirmed."
+      },
+      "ProfileDraft": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldResult"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/FieldStatus"
+            },
+            "type": "object",
+            "title": "Counts"
+          },
+          "incomplete_documents": {
+            "items": {
+              "$ref": "#/components/schemas/IncompleteDocument"
+            },
+            "type": "array",
+            "title": "Incomplete Documents",
+            "default": []
+          },
+          "db_incomplete": {
+            "type": "boolean",
+            "title": "Db Incomplete",
+            "default": false
+          },
+          "schema_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Schema Fields"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "fields",
+          "counts",
+          "schema_fields"
+        ],
+        "title": "ProfileDraft"
+      },
+      "ProfileRow": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "values": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Values"
+          },
+          "fundstelle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fundstelle"
+          },
+          "quelle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentCitation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "konfidenz": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Konfidenz"
+          },
+          "bestaetigt_von": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bestaetigt Von"
+          },
+          "bestaetigt_am": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bestaetigt Am"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "values"
+        ],
+        "title": "ProfileRow",
+        "description": "A row of the confirmed profile with its citation (never an evidence quote)."
+      },
+      "ProgressResponse": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectView"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentProgress"
+            },
+            "type": "array",
+            "title": "Documents",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "project"
+        ],
+        "title": "ProgressResponse"
+      },
+      "ProjectState": {
+        "type": "string",
+        "enum": [
+          "published",
+          "confirmed",
+          "embedded",
+          "cleaned"
+        ],
+        "title": "ProjectState",
+        "description": "Moves forward one step at a time; a failed step leaves it unchanged."
+      },
+      "ProjectView": {
+        "properties": {
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "profile_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Version"
+          },
+          "embeddings_stale": {
+            "type": "boolean",
+            "title": "Embeddings Stale",
+            "default": false
+          },
+          "running_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Step"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "embedded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedded At"
+          },
+          "cleaned_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cleaned At"
+          }
+        },
+        "type": "object",
+        "title": "ProjectView"
+      },
+      "RejectedFile": {
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "relative_path",
+          "reason"
+        ],
+        "title": "RejectedFile"
+      },
+      "ReviewView": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft_version": {
+            "type": "string",
+            "title": "Draft Version"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/ProfileDraft"
+          },
+          "open_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/OpenDecision"
+            },
+            "type": "array",
+            "title": "Open Decisions"
+          },
+          "needs_review": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Needs Review"
+          },
+          "open_hints": {
+            "items": {
+              "$ref": "#/components/schemas/HintRow"
+            },
+            "type": "array",
+            "title": "Open Hints"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "state",
+          "draft_version",
+          "draft",
+          "open_decisions",
+          "needs_review",
+          "open_hints"
+        ],
+        "title": "ReviewView",
+        "description": "Everything the review screen reads; no extraction happens here."
+      },
+      "RunState": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "finished",
+          "failed",
+          "interrupted"
+        ],
+        "title": "RunState"
+      },
+      "RunView": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RunState"
+          },
+          "started_by": {
+            "type": "string",
+            "title": "Started By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts",
+            "default": {}
+          },
+          "published": {
+            "type": "boolean",
+            "title": "Published",
+            "default": false
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "state",
+          "started_by",
+          "created_at"
+        ],
+        "title": "RunView"
+      },
+      "UpdateBody": {
+        "properties": {
+          "profile_version": {
+            "type": "integer",
+            "title": "Profile Version"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_version",
+          "changes"
+        ],
+        "title": "UpdateBody",
+        "description": "Changes to a confirmed profile (edit, add, remove, end)."
+      },
+      "UpdateResult": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "update_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Update Id"
+          },
+          "profile_version": {
+            "type": "integer",
+            "title": "Profile Version"
+          },
+          "changes": {
+            "type": "integer",
+            "title": "Changes"
+          },
+          "hints_closed": {
+            "type": "integer",
+            "title": "Hints Closed",
+            "default": 0
+          },
+          "changed_features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Features",
+            "default": []
+          },
+          "embeddings_refreshed": {
+            "type": "boolean",
+            "title": "Embeddings Refreshed",
+            "default": false
+          },
+          "embeddings_stale": {
+            "type": "boolean",
+            "title": "Embeddings Stale",
+            "default": false
+          },
+          "refresh_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "update_id",
+          "profile_version",
+          "changes"
+        ],
+        "title": "UpdateResult"
+      },
+      "UploadResponse": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "accepted": {
+            "items": {
+              "$ref": "#/components/schemas/AcceptedFile"
+            },
+            "type": "array",
+            "title": "Accepted"
+          },
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedFile"
+            },
+            "type": "array",
+            "title": "Rejected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "run_id",
+          "accepted",
+          "rejected"
+        ],
+        "title": "UploadResponse"
+      }
+    }
+  }
+}

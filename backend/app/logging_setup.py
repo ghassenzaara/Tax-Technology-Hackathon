@@ -1,4 +1,4 @@
-"""Logging configuration shared by the CLI and (later) the API."""
+"""Logging configuration shared by the CLI and the API."""
 
 import logging
 import sys
@@ -11,5 +11,5 @@ def configure_logging(level: str = "INFO") -> None:
         stream=sys.stderr,
     )
     # Third-party libraries are chatty at INFO/DEBUG.
-    for noisy in ("pdfminer", "httpx", "openai"):
+    for noisy in ("pdfminer", "httpx", "httpx2", "openai"):
         logging.getLogger(noisy).setLevel(logging.WARNING)

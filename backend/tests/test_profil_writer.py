@@ -3,214 +3,21 @@
 The profil schema is created when missing (never reset), so seeds stay intact."""
 
 import os
-import uuid
 
 import psycopg
 import pytest
 
 from app.config import PROFILE_DB_DIR
 from app.db.repository import PublishError
-from app.models.extraction import Candidate, DocumentExtraction
-from app.profile.merge import merge_candidates
+from tests.profil_data import DOCS, QUOTE, cand, candidates, draft_for, extractions
 
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL not set")
 
-DOCS = {  # doc_id -> (filename, klasse_code)
-    "report": ("01_Tax-DD-Report.pdf", "dd_report"),
-    "spa": ("02_SPA-Auszug.pdf", "spa"),
-    "register": ("03_Handelsregisterauszug.pdf", "register"),
-    "notice": ("08_Feststellungsbescheide.pdf", "bescheid"),
-    "draft": ("06_Gewinnabfuehrungsvertrag_ENTWURF.pdf", "entwurf"),
-}
-
 
 @pytest.fixture
-async def repository():
-    from app.db.postgres import PostgresRepository
-
-    repo = PostgresRepository(DATABASE_URL)
-    await repo.initialize()
-    await repo.initialize_profile_schema(PROFILE_DB_DIR)
-    yield repo
-    await repo.close()
-
-
-@pytest.fixture
-def project():
-    return f"test-{uuid.uuid4().hex[:10]}"
-
-
-def cand(project, field, value, doc, page=1, confidence=0.9):
-    return Candidate(
-        company_id=project,
-        field_name=field,
-        value=value,
-        evidence=f"Beleg für {field}",
-        source_doc=doc,
-        source_filename=DOCS[doc][0],
-        source_page=page,
-        confidence=confidence,
-    )
-
-
-def extractions(project):
-    return [
-        DocumentExtraction(
-            company_id=project,
-            doc_id=doc,
-            filename=filename,
-            status="ok",
-            document_class=klasse,
-            document_title=filename,
-            document_date="2026-02-03",
-        )
-        for doc, (filename, klasse) in DOCS.items()
-    ]
-
-
-def candidates(project):
-    c = lambda *args, **kw: cand(project, *args, **kw)  # noqa: E731
-    return [
-        c("deal_typ", "share_deal", "spa"),
-        c("kaeufer", "Weserlinie Logistics BidCo GmbH", "spa"),
-        c("closing_am", "2026-05-12", "spa"),
-        c("kaufpreis_eur", 38_400_000, "spa"),
-        c("name", f"Testfirma {project} GmbH", "register"),
-        c("rechtsform", "GmbH", "register"),
-        c("rolle", "operativ", "report"),
-        c("wz_code", "52.10", "report"),
-        c(
-            "merkmal",
-            {"merkmal_code": "B04", "wert": "nein", "kurztext": "GAV nur Entwurf"},
-            "register",
-        ),
-        # Conflict: rounded report figure vs exact notice; the notice (rank 1) wins.
-        c(
-            "steuerattribut",
-            {
-                "art": "kst_verlustvortrag",
-                "stichtag": "2024-12-31",
-                "betrag_eur": 2_412_380,
-                "festgestellt": True,
-                "sperre": None,
-            },
-            "notice",
-        ),
-        c(
-            "steuerattribut",
-            {
-                "art": "kst_verlustvortrag",
-                "stichtag": "2024-12-31",
-                "betrag_eur": 2_600_000,
-                "festgestellt": True,
-                "sperre": None,
-            },
-            "report",
-            page=7,
-        ),
-        c(
-            "organschaft",
-            {
-                "art": "kst_gewst",
-                "status": "geplant",
-                "organtraeger_name": "Weserlinie Logistics BidCo GmbH",
-                "vertrag_am": None,
-                "hr_eintragung_am": None,
-                "wirksam_ab": "2027-01-01",
-                "mindestlaufzeit_bis": "2031-12-31",
-                "bemerkung": "Entwurf",
-            },
-            "draft",
-            confidence=0.3,
-        ),
-        c(
-            "veranlagung",
-            {
-                "jahr": 2022,
-                "steuerart": "GewSt",
-                "bescheidart": "messbetrag",
-                "stand": "veranlagt",
-                "erklaerung_am": None,
-                "bescheid_vom": "2024-06-21",
-                "vorbehalt_164": "ja",
-                "vorlaeufig_165": None,
-                "vorlaeufig_punkt": None,
-                "vorlaeufig_az": None,
-                "abweichung_von_erklaerung": None,
-                "erweiterte_kuerzung": None,
-                "festsetzungsfrist_ende": "2027-12-31",
-                "ablaufhemmung": "einspruch_171_3a",
-                "verjaehrt": False,
-            },
-            "notice",
-        ),
-        c(
-            "rechtsbehelf",
-            {
-                "art": "einspruch",
-                "eingelegt_am": "2024-07-15",
-                "status": "ruht",
-                "ruht_rechtsgrundlage": None,
-                "musterverfahren_gericht": "BFH",
-                "musterverfahren_az": "IV R 88/24",
-                "streitpunkt": "Regalanlage",
-                "auswirkung_eur": 37_500,
-                "veranlagung_jahr": 2022,
-                "veranlagung_steuerart": "GewSt",
-            },
-            "report",
-        ),
-        c(
-            "finding",
-            {
-                "finding_code": "K-1",
-                "report_ref": "Feststellung 1",
-                "titel": "Verlustuntergang",
-                "steuerarten": ["KSt", "GewSt"],
-                "jahr_von": 2026,
-                "jahr_bis": None,
-                "kurzsachverhalt": None,
-                "risiko": "mittel",
-                "richtung": "risiko",
-                "betrag_min_eur": 0,
-                "betrag_max_eur": 680_000,
-                "offene_rechtsfrage": False,
-                "musterverfahren_az": None,
-                "status": "offen",
-                "empfehlung": None,
-                "normen": ["§ 8c KStG", "§ 10a GewStG"],
-            },
-            "report",
-        ),
-        # Missing a NOT NULL column (betrag_eur): skipped with a pruefhinweis.
-        c(
-            "darlehen",
-            {
-                "darlehensgeber": "Henrik Albers",
-                "beziehung": "gesellschafter",
-                "betrag_eur": None,
-                "zinssatz_prozent": 6.0,
-                "beginn_am": "2017-07-01",
-                "faellig_am": None,
-                "status": "zurueckgezahlt",
-                "beendet_am": None,
-                "abgetreten_an": None,
-                "abgetreten_am": None,
-            },
-            "report",
-        ),
-    ]
-
-
-def draft_for(project, profil_schema, cands=None):
-    return merge_candidates(
-        cands if cands is not None else candidates(project),
-        profil_schema,
-        company_id=project,
-        max_granularity=1000,
-        extractions=extractions(project),
-    )
+def repository(pg_repository):
+    return pg_repository
 
 
 async def query(sql, *params):
@@ -289,6 +96,32 @@ async def test_publish_writes_profile_rows(repository, project, profil_schema, s
         ges_id,
     )
     assert ("IV R 88/24",) in az
+
+
+async def test_fundstelle_is_a_citation_without_quote(repository, project, profil_schema, settings):
+    # Plan 2.5: filename and page only (page only when quelle_dok links the document).
+    await repository.publish_profile(
+        draft_for(project, profil_schema), extractions(project), profil_schema, settings
+    )
+
+    rows = await query(
+        "SELECT r.fundstelle, r.quelle_dok IS NOT NULL FROM profil.rechtsbehelf r "
+        "JOIN profil.gesellschaft g ON g.id = r.gesellschaft_id "
+        "JOIN profil.deal d ON d.id = g.deal_id WHERE d.projektname = %s",
+        project,
+    )
+    assert rows == [("S. 1", True)]
+    texts = await query(
+        "SELECT p::text FROM profil.pruefhinweis p JOIN profil.gesellschaft g "
+        "ON g.id = p.gesellschaft_id JOIN profil.deal d ON d.id = g.deal_id "
+        "WHERE d.projektname = %s",
+        project,
+    )
+    assert texts and not any(QUOTE in t for (t,) in texts)
+    (state,) = await query(
+        "SELECT state, published_docs FROM pipeline.project_state WHERE company_id = %s", project
+    )
+    assert state == ("published", sorted(DOCS))
 
 
 async def test_republish_replaces_previous(repository, project, profil_schema, settings):

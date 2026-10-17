@@ -127,11 +127,35 @@ class FakeCompletions:
         return SimpleNamespace(choices=[choice], usage=usage)
 
 
+class FakeEmbeddings:
+    """`embeddings.create`: one vector of `dim` floats per input, or `vectors(texts)`."""
+
+    def __init__(self, dim, errors, vectors):
+        self.dim, self.errors, self.vectors = dim, errors, vectors
+        self.calls = 0
+        self.inputs: list[list[str]] = []
+
+    async def create(self, *, model, input):
+        self.calls += 1
+        self.inputs.append(list(input))
+        if self.errors:
+            raise self.errors.pop(0)
+        vectors = (
+            self.vectors(input)
+            if self.vectors
+            else [[float(n + 1)] * self.dim for n in range(len(input))]
+        )
+        data = [SimpleNamespace(embedding=v, index=i) for i, v in enumerate(vectors)]
+        return SimpleNamespace(data=data, model=model)
+
+
 class FakeClient:
-    """Stands in for AsyncOpenAI: only `chat.completions.create` is used.
+    """Stands in for AsyncOpenAI: `chat.completions.create` and `embeddings.create`.
 
     Answers are `text` by default; `responses` scripts one answer per call (a string, a
     `Reply`, or an exception to raise); `responder(kwargs)` computes the answer per call.
+    Embeddings: `embedding_dim` floats per input, `embedding_errors` raised first,
+    `vectors(texts)` overrides the vectors (for count and dimension failures).
     """
 
     def __init__(
@@ -141,9 +165,13 @@ class FakeClient:
         errors=(),
         responses=(),
         responder=None,
+        embedding_dim: int = 4,
+        embedding_errors=(),
+        vectors=None,
     ):
         self.completions = FakeCompletions(text, delay, list(errors), list(responses), responder)
         self.chat = SimpleNamespace(completions=self.completions)
+        self.embeddings = FakeEmbeddings(embedding_dim, list(embedding_errors), vectors)
 
 
 def make_document(

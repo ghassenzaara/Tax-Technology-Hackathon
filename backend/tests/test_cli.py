@@ -196,3 +196,81 @@ def test_mock_data_room_end_to_end_with_publish(keyed, monkeypatch, profil_schem
     assert f"Published project '{project}' to schema profil" in printed
     assert "dokument=17" in printed and "gesellschaft=1" in printed
     assert "kaeufer" in printed and "confirmed" in printed
+
+
+def test_steps_need_postgres_and_arguments(keyed, tmp_path):
+    decisions = tmp_path / "decisions.json"
+    decisions.write_text("{}", "utf-8")
+
+    assert cli.main(["--review", "--company-id", "x"]) == 2  # memory repository
+    assert cli.main(["--confirm", str(decisions), "--company-id", "x"]) == 2
+    assert cli.main(["--embed", "--cleanup", "--company-id", "x"]) == 2
+    assert cli.main(["--review"]) == 2
+
+
+def fill_template(template: dict) -> dict:
+    """What the advisor does in the UI: decide every open point."""
+    for d in template["decisions"]:
+        if "choose" in d["allowed"]:
+            d["action"], d["group"] = "choose", 0
+        elif "leave_empty" in d["allowed"]:
+            d["action"] = "leave_empty"
+        else:
+            d["action"] = "edit"
+            d["cells"] = {name: {"group": 0} for name in d["cells"]}
+        del d["allowed"]
+    return template
+
+
+@pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL not set")
+def test_review_confirm_advance_end_to_end(keyed, monkeypatch, profil_schema, capsys, tmp_path):
+    """Mock data room -> publish -> review -> confirm -> embed + cleanup through the CLI."""
+    project = f"test-steps-{uuid.uuid4().hex[:8]}"
+    settings = keyed.model_copy(
+        update={
+            "repository": "postgres",
+            "database_url": SecretStr(DATABASE_URL),
+            "profile_schema_path": PROFILE_SCHEMA,
+        }
+    )
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+
+    def agent(kwargs):  # every document also states one foreign subsidiary (B07 ja)
+        payload = json.loads(profil_answer(kwargs, profil_schema))
+        payload["merkmal"].append(
+            item(
+                merkmal_code="B07", wert="ja", kurztext="Tochter in den Niederlanden", evidence="x"
+            )
+        )
+        return json.dumps(payload)
+
+    sentence = "Die Gesellschaft hält eine ausländische Tochtergesellschaft."
+    client = FakeClient(
+        responder=lambda kwargs: agent(kwargs) if "response_format" in kwargs else sentence
+    )
+    monkeypatch.setattr(pipeline, "make_client", lambda s: client)
+    monkeypatch.setattr(cli, "make_client", lambda s: client)
+    upload = settings.data_dir / project
+    upload.mkdir(parents=True)
+    (upload / "01_Tax-DD-Report.pdf").write_bytes(b"%PDF raw")
+
+    assert cli.main([str(MOCK_FILES), "--extract", "--publish", "--company-id", project]) == 0
+    review = tmp_path / "review.json"
+    assert cli.main(["--review", "--company-id", project, "--json", str(review)]) == 0
+    printed = capsys.readouterr().out
+    assert "Open decisions:" in printed and "draft version" in printed
+    decisions = tmp_path / "decisions.json"
+    template = json.loads(review.read_text("utf-8"))["decisions_template"]
+    decisions.write_text(json.dumps(fill_template(template)), "utf-8")
+
+    confirm = ["--confirm", str(decisions), "--confirmed-by", "Dr. Test", "--company-id", project]
+    assert cli.main(confirm) == 0
+    assert f"Confirmed project '{project}' by Dr. Test" in capsys.readouterr().out
+    assert cli.main(confirm) == 1  # a second confirm is refused (state confirmed)
+
+    advance = ["--advance", "--company-id", project, "--delete-path", str(upload)]
+    assert cli.main(advance) == 0
+    printed = capsys.readouterr().out
+    assert "1 features embedded in" in printed and sentence in printed
+    assert f"Cleaned project '{project}'" in printed and not upload.exists()
+    assert cli.main([str(MOCK_FILES), "--extract", "--publish", "--company-id", project]) == 1

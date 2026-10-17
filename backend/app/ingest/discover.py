@@ -38,7 +38,7 @@ def discover(root: Path, settings: Settings) -> list[DiscoveredFile]:
     """All non-junk files below `root`, sorted by path for deterministic runs."""
     files = []
     for path in sorted(root.rglob("*")):
-        if path.is_file() and not _is_junk(path.relative_to(root)):
+        if path.is_file() and not is_junk(path.relative_to(root)):
             files.append(classify(path, root, settings))
     return files
 
@@ -64,7 +64,7 @@ def classify(path: Path, root: Path, settings: Settings) -> DiscoveredFile:
     return found(file_format)
 
 
-def _is_junk(relative: Path) -> bool:
+def is_junk(relative: Path) -> bool:
     name = relative.name
     hidden = any(part.startswith(".") for part in relative.parts)
     return hidden or name.startswith("~$") or name.lower() in JUNK_NAMES

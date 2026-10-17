@@ -6,12 +6,31 @@ Usage:
                            [--repository memory|postgres] [--publish] [--json out.json]
   uv run python -m app.cli --merge-only --company-id PROJECT [--publish]
   uv run python -m app.cli --init-db [--seed] [--reset-profil] --repository postgres
+  uv run python -m app.cli --review --company-id PROJECT [--json review.json]
+  uv run python -m app.cli --confirm decisions.json --confirmed-by NAME --company-id PROJECT
+  uv run python -m app.cli --embed | --cleanup | --advance --company-id PROJECT
+                           [--delete-path DIR ...]
+  uv run python -m app.cli --profile | --audit [--kind KIND] [--person NAME] --company-id PROJECT
+  uv run python -m app.cli --update changes.json --changed-by NAME --company-id PROJECT
 
 The company id is the deal's project name (profil.deal.projektname). --publish writes the
-draft into schema profil as unconfirmed rows, replacing an earlier publish of that project.
+draft into schema profil as unconfirmed rows, replacing an earlier publish of that project
+(refused once the project is confirmed).
+
+Steps 8 to 10 (postgres only): --review prints the open decisions and the draft version
+(--json also writes a decisions template); --confirm applies a decisions file (format:
+app/models/review.py ConfirmRequest) and stamps every row; --embed writes one vector per
+feature; --cleanup deletes the working rows and the given upload paths (inside DATA_DIR);
+--advance runs embed then cleanup (and repairs stale vectors). Confirm is never chained: it
+needs the advisor. After confirmation --update applies a changes file (format:
+app/models/update.py UpdateRequest) and refreshes the affected vectors; --profile and
+--audit print the confirmed profile and the append-only audit log.
+
+Known limit: files written with --json or --markdown contain document text and are outside
+the pipeline's control; step 10 does not delete them.
 
 Exit code is non-zero only when the run cannot start (bad folder, bad schema file, missing
-key or database settings), not when single files fail.
+key or database settings) or a requested publish or step fails, not when single files fail.
 """
 
 import argparse
@@ -30,14 +49,24 @@ from app.db.repository import (
     PublishReport,
     Repository,
     RepositoryError,
+    StateError,
     make_repository,
 )
 from app.ingest.pipeline import DocumentParser, RunSummary, summarize
+from app.llm import make_client
 from app.logging_setup import configure_logging
+from app.models.audit import AuditEntry, AuditFilter, AuditKind
 from app.models.document import DocStatus, Document
 from app.models.extraction import DocumentExtraction
 from app.models.profile import FieldResult, FieldStatus, ProfileDraft
+from app.models.review import ConfirmRequest, ConfirmResult, ReviewView
+from app.models.update import ConfirmedProfile, UpdateRequest, UpdateResult
+from app.profile.review import DecisionError
 from app.profile.schema import ProfileSchema, SchemaError, load_profile_schema
+from app.services.cleanup import CleanupError, cleanup_project
+from app.services.confirm import confirm_profile, review_profile
+from app.services.embed import Embedder, EmbedError
+from app.services.update import read_profile, update_profile
 
 log = logging.getLogger("app.cli")
 
@@ -54,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings().model_copy(update=updates)
 
     db_setup = args.init_db or args.seed or args.reset_profil
+    if any(getattr(args, command) for command in STEP_COMMANDS):
+        return _run_steps(args, settings)
     needs_folder = not (args.merge_only or (db_setup and not args.folder))
     folder = Path(args.folder) if args.folder else None
     if needs_folder and (folder is None or not folder.is_dir()):
@@ -180,6 +211,229 @@ async def _db_only(
         await repository.close()
 
 
+STEP_COMMANDS = ("review", "confirm", "embed", "cleanup", "advance", "profile", "update", "audit")
+
+
+def _run_steps(args: argparse.Namespace, settings: Settings) -> int:
+    """Steps 8 to 10 and profile updates on a published project. Database only."""
+    chosen = [a for a in STEP_COMMANDS if getattr(args, a)]
+    if len(chosen) > 1:
+        return _fail(f"choose one command at a time: {', '.join('--' + c for c in chosen)}")
+    command = chosen[0]
+    if settings.repository != "postgres":
+        return _fail(f"--{command} needs --repository postgres")
+    if not args.company_id:
+        return _fail(f"--{command} needs --company-id")
+    if args.confirm and not args.confirmed_by:
+        return _fail("--confirm needs --confirmed-by NAME")
+    if args.update and not args.changed_by:
+        return _fail("--update needs --changed-by NAME")
+    if (args.embed or args.advance) and settings.openai_api_key is None:
+        return _fail(f"--{command} needs OPENAI_API_KEY")
+    if args.delete_path and not (args.cleanup or args.advance):
+        return _fail("--delete-path needs --cleanup or --advance")
+    request = None
+    if args.confirm or args.update:
+        path = args.confirm or args.update
+        try:
+            raw = json.loads(Path(path).read_text("utf-8"))
+            raw["company_id"] = args.company_id  # the command line wins over the file
+            if args.confirm:
+                raw["confirmed_by"] = args.confirmed_by
+                request = ConfirmRequest.model_validate(raw)
+            else:
+                raw["changed_by"] = args.changed_by
+                request = UpdateRequest.model_validate(raw)
+        except (OSError, ValueError) as exc:
+            return _fail(f"bad {command} file {path}: {exc}")
+    try:
+        schema = load_profile_schema(settings.profile_schema_path)
+        repository = make_repository(settings)
+    except (SchemaError, RepositoryError) as exc:
+        return _fail(str(exc))
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
+    return asyncio.run(
+        _steps(command, args, settings, schema, repository, request), loop_factory=loop_factory
+    )
+
+
+async def _steps(
+    command: str,
+    args: argparse.Namespace,
+    settings: Settings,
+    schema: ProfileSchema,
+    repository: Repository,
+    request: ConfirmRequest | UpdateRequest | None,
+) -> int:
+    company_id = args.company_id
+    try:
+        await repository.initialize()  # pipeline tables incl. project state, idempotent
+        match command:
+            case "review":
+                view = await review_profile(repository, schema, settings, company_id)
+                _print_review(view)
+                _write_json(args.json, _review_payload(view))
+            case "confirm":
+                result = await confirm_profile(repository, schema, settings, request)
+                _print_confirm(result)
+                _write_json(args.json, {"confirm_result": result.model_dump(mode="json")})
+            case "update":
+                client = make_client(settings)
+                updated = await update_profile(repository, schema, settings, request, client)
+                _print_update(updated)
+                _write_json(args.json, {"update_result": updated.model_dump(mode="json")})
+            case "profile":
+                profile = await read_profile(repository, schema, settings, company_id)
+                _print_profile(profile)
+                _write_json(args.json, {"profile": profile.model_dump(mode="json")})
+            case "audit":
+                audit_filter = AuditFilter(
+                    company_id=company_id, kind=args.kind, acted_by=args.person
+                )
+                entries = await repository.list_audit(audit_filter)
+                _print_audit(entries)
+                _write_json(args.json, {"audit": [e.model_dump(mode="json") for e in entries]})
+            case "embed":
+                await _embed(repository, schema, settings, company_id)
+            case "cleanup":
+                await _cleanup(repository, settings, company_id, args.delete_path)
+            case "advance":  # demo: embed, then clean up (also repairs stale vectors)
+                await _embed(repository, schema, settings, company_id)
+                await _cleanup(repository, settings, company_id, args.delete_path)
+        return 0
+    except DecisionError as exc:  # also UpdateError: every problem per field
+        print(f"\n{command} refused, nothing changed:", file=sys.stderr)
+        for line in str(exc).split("; "):
+            print(f"  {line}", file=sys.stderr)
+        return 1
+    except (RepositoryError, EmbedError, CleanupError) as exc:
+        print(f"\nerror: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await repository.close()
+
+
+async def _embed(
+    repository: Repository, schema: ProfileSchema, settings: Settings, company_id: str
+) -> None:
+    client = make_client(settings)
+    report = await Embedder(repository, schema, settings, client).run(company_id)
+    print(f"\n{report.headline()} (model {report.model}, fallback {report.fallback})")
+    for ref, sentence in report.sentences.items():
+        marker = " [fallback]" if ref in report.fallback_features else ""
+        print(f"  {ref}: {sentence}{marker}")
+
+
+async def _cleanup(
+    repository: Repository, settings: Settings, company_id: str, delete_paths: list[str] | None
+) -> None:
+    paths = [Path(p) for p in delete_paths or []]
+    cleaned = await cleanup_project(repository, settings, company_id, paths)
+    print(f"\nCleaned project '{company_id}': rows deleted {cleaned.rows_deleted}")
+    print(f"  files deleted: {', '.join(cleaned.files_deleted) or 'none'}")
+    print(f"  verified: rows left {cleaned.rows_left}, state {cleaned.state}")
+
+
+def _print_confirm(result: ConfirmResult) -> None:
+    print(f"\nConfirmed project '{result.company_id}' by {result.confirmed_by}:")
+    print(
+        f"  accepted={result.fields_accepted} conflicts_resolved={result.conflicts_resolved} "
+        f"typed={result.values_typed} left_empty={result.fields_left_empty} "
+        f"rows_dropped={result.rows_dropped}"
+    )
+    print(f"  hints closed={result.hints_closed} still open={result.hints_open}")
+
+
+def _print_update(result: UpdateResult) -> None:
+    print(
+        f"\nUpdated project '{result.company_id}': {result.changes} change(s), "
+        f"profile version {result.profile_version}, hints closed {result.hints_closed}"
+    )
+    if result.embeddings_refreshed:
+        print(f"  vectors refreshed: {', '.join(result.changed_features) or 'metadata only'}")
+    elif result.embeddings_stale:
+        print(f"  vectors stale ({result.refresh_error}); run --advance to repair")
+
+
+def _print_profile(profile: ConfirmedProfile) -> None:
+    stale = ", vectors stale" if profile.embeddings_stale else ""
+    print(
+        f"\nProfile '{profile.company_id}' (state {profile.state}, "
+        f"version {profile.profile_version}{stale})"
+    )
+    for name, value in profile.scalars.items():
+        if value is not None:
+            print(f"  {name:<24}{json.dumps(value, ensure_ascii=False)}")
+    for name, rows in profile.lists.items():
+        for row in rows:
+            values = {k: v for k, v in row.values.items() if v is not None}
+            print(f"  {name} #{row.id}: {json.dumps(values, ensure_ascii=False)}")
+            print(f"      [{row.fundstelle or 'ohne Fundstelle'}]")
+    print(f"Audit log: {len(profile.audit)} entr{'y' if len(profile.audit) == 1 else 'ies'}")
+
+
+def _print_audit(entries: list[AuditEntry]) -> None:
+    """Newest first: who, when, what (field, old and new value, reason)."""
+    print(f"\nAudit log: {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}")
+    for e in entries:
+        when = f"{e.acted_at:%Y-%m-%d %H:%M}" if e.acted_at else "-"
+        if e.kind is AuditKind.PROFILE_CHANGED:
+            where = f" #{e.row_id}" if e.row_id else ""
+            what = (
+                f"{e.change_kind} {e.field}{where} {json.dumps(e.old_value, ensure_ascii=False)}"
+                f" -> {json.dumps(e.new_value, ensure_ascii=False)}"
+            )
+        else:
+            what = json.dumps(e.new_value, ensure_ascii=False)
+        reason = f" ({e.reason})" if e.reason else ""
+        print(f"  v{e.profile_version} {when} {e.acted_by}: {e.kind} {what}{reason}")
+
+
+def _review_payload(view: ReviewView) -> dict:
+    """The review plus a decisions template: fill in `action` (one of `allowed`)."""
+    template = {
+        "company_id": view.company_id,
+        "draft_version": view.draft_version,
+        "decisions": [
+            {
+                "field": o.field,
+                **({"key": o.key} if o.key is not None else {}),
+                "action": None,
+                "allowed": [str(a) for a in o.allowed],
+                **({"cells": {c: {"group": None} for c in o.cells}} if o.cells else {}),
+            }
+            for o in view.open_decisions
+        ],
+    }
+    return {"review": view.model_dump(mode="json"), "decisions_template": template}
+
+
+def _print_review(view: ReviewView) -> None:
+    print(
+        f"\nReview of '{view.company_id}' (state {view.state or 'not published'}, "
+        f"draft version {view.draft_version})"
+    )
+    print(f"Open decisions: {len(view.open_decisions)}")
+    for o in view.open_decisions:
+        field = view.draft.field(o.field)
+        result = field
+        if o.key is not None:
+            result = next(i for i in field.items if i.key == o.key)
+        where = f"{o.field} {json.dumps(o.key, ensure_ascii=False)}" if o.key else o.field
+        cells = f" cells: {', '.join(o.cells)}" if o.cells else ""
+        print(f"  {where}: {o.kind}{cells} -> {' | '.join(str(a) for a in o.allowed)}")
+        for i, group in enumerate(result.groups):
+            rank = f" rank={group.best_rank}" if group.best_rank is not None else ""
+            sources = ", ".join(f"{c.source_filename} p.{c.source_page}" for c in group.candidates)
+            value = json.dumps(group.value, ensure_ascii=False)
+            print(f"      group {i}{rank}: {value} ({sources})")
+    if view.needs_review:
+        print(f"Needs review (no decision required): {', '.join(view.needs_review)}")
+    print(f"Open pruefhinweis rows: {len(view.open_hints)}")
+    for hint in view.open_hints:
+        print(f"  [{hint.art}] {hint.feld}: {hint.beschreibung}")
+
+
 async def _setup_db(repository: Repository, settings: Settings, args: argparse.Namespace) -> None:
     if not (args.init_db or args.seed or args.reset_profil):
         return
@@ -199,7 +453,7 @@ async def _publish(
 ) -> PublishReport | str:
     try:
         return await orchestrator.publish(draft, extractions, run_scoped=run_scoped)
-    except PublishError as exc:
+    except (PublishError, StateError) as exc:  # StateError: the project is already confirmed
         return str(exc)
 
 
@@ -298,7 +552,7 @@ def _print_result(f: FieldResult, *, indent: str, name: str) -> None:
             marker = " (suggested)" if i == f.suggestion else ""
             rank = f" rank={group.best_rank}" if group.best_rank is not None else ""
             value = json.dumps(group.value, ensure_ascii=False)
-            print(f"{indent}    option {i + 1}{rank}: {value}{marker}")
+            print(f"{indent}    group {i}{rank}: {value}{marker}")
             for c in group.candidates:
                 print(
                     f"{indent}      {c.source_filename} p.{c.source_page} "
@@ -340,10 +594,18 @@ def _fail(message: str) -> int:
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Parse a folder of DD documents.")
+    parser = argparse.ArgumentParser(
+        description="Parse a folder of DD documents.",
+        epilog="Files written with --json or --markdown contain document text; step 10 "
+        "(--cleanup) does not delete them.",
+    )
     parser.add_argument("folder", nargs="?", help="folder with PDF and Excel files")
-    parser.add_argument("--json", metavar="FILE", help="write results as JSON")
-    parser.add_argument("--markdown", action="store_true", help="print each document's markdown")
+    parser.add_argument(
+        "--json", metavar="FILE", help="write results as JSON (contains document text)"
+    )
+    parser.add_argument(
+        "--markdown", action="store_true", help="print each document's markdown (document text)"
+    )
     parser.add_argument("--log-level", default="INFO", help="logging level (default INFO)")
 
     extraction = parser.add_argument_group("extraction (steps 5 to 7)")
@@ -370,6 +632,36 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="drop and recreate schema profil (deletes every published profile)",
     )
+
+    steps = parser.add_argument_group("confirm, embed, clean up (steps 8 to 10, postgres only)")
+    steps.add_argument("--review", action="store_true", help="print open decisions of --company-id")
+    steps.add_argument(
+        "--confirm", metavar="FILE", help="apply a decisions file and confirm the profile"
+    )
+    steps.add_argument("--confirmed-by", metavar="NAME", help="advisor who confirms (--confirm)")
+    steps.add_argument("--embed", action="store_true", help="one vector per profile feature")
+    steps.add_argument(
+        "--cleanup", action="store_true", help="delete working data once vectors exist"
+    )
+    steps.add_argument("--advance", action="store_true", help="--embed then --cleanup")
+    steps.add_argument(
+        "--delete-path",
+        metavar="PATH",
+        action="append",
+        help="upload folder or file to delete in step 10 (must be inside DATA_DIR; repeatable)",
+    )
+
+    updates = parser.add_argument_group("after confirmation (plan section 4b, postgres only)")
+    updates.add_argument("--profile", action="store_true", help="print the confirmed profile")
+    updates.add_argument(
+        "--update", metavar="FILE", help="apply a changes file to the confirmed profile"
+    )
+    updates.add_argument("--changed-by", metavar="NAME", help="advisor who changes (--update)")
+    updates.add_argument(
+        "--audit", action="store_true", help="print the audit log of --company-id, newest first"
+    )
+    updates.add_argument("--kind", choices=[str(k) for k in AuditKind], help="--audit filter")
+    updates.add_argument("--person", metavar="NAME", help="--audit filter: acting person")
     return parser.parse_args(argv)
 
 

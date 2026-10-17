@@ -2,14 +2,22 @@
 
 One transaction per project. Scalar fields fill `deal` and `gesellschaft` (the target
 company); list fields become rows of their table, each with its own provenance (quelle_dok,
-fundstelle, stand, konfidenz) from the strongest supporting candidate. Rows are unconfirmed:
-`bestaetigt_von` stays empty until the advisor confirms (step 8).
+fundstelle, stand, konfidenz) from the strongest supporting candidate. `fundstelle` is a
+citation only (file name and page, the page alone when `quelle_dok` links the document):
+the evidence quote never enters `profil`; it lives in the pipeline draft until step 10.
 
-Conflicts are written with the suggested value (strongest source class, then most
-documents) and recorded in `pruefhinweis` (art konflikt, status offen) with all
-alternatives, as the schema's design asks. Rows missing a NOT NULL column are skipped and
-recorded as pruefhinweis plausibilitaet. Merkmale without any statement become `unbekannt`.
-Column types come from the live catalog, so every value is cast to its column type.
+Unconfirmed publish (step 7): conflicts are written with the suggested value (strongest
+source class, then most documents) and recorded in `pruefhinweis` (art konflikt, status
+offen) with all alternatives. Rows missing a NOT NULL column are skipped and recorded as
+pruefhinweis plausibilitaet. Merkmale without any statement become `unbekannt`.
+
+Confirmed publish (step 8): the same code path with the advisor's decisions applied to the
+draft. Every row gets `bestaetigt_von`/`bestaetigt_am`, typed values get advisor provenance,
+decided hints are written `geklaert` with the decision text.
+
+The project state guards both: a publish is refused once the project is confirmed, a
+confirm needs state published. Column types come from the live catalog, so every value is
+cast to its column type.
 """
 
 import re
@@ -18,16 +26,28 @@ from typing import Any
 import psycopg
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from app.config import Settings
-from app.db.repository import PublishError, PublishReport
+from app.db.audit import write_audit
+from app.db.repository import PublishError, PublishReport, StateError, refused_publish
+from app.models.audit import AuditEntry, AuditKind
 from app.models.extraction import Candidate, DocumentExtraction
-from app.models.profile import CandidateGroup, FieldResult, FieldStatus, ProfileDraft
+from app.models.profile import (
+    CandidateGroup,
+    FieldResult,
+    FieldStatus,
+    ProfileDraft,
+)
+from app.models.project import Confirmation, ProjectState
+from app.models.review import FieldError
 from app.profile.merge import WEAKEST_RANK, document_ranks
+from app.profile.review import DecisionError, sources_text
 from app.profile.schema import FieldSpec, ProfileSchema
 
 SCHEMA = "profil"
 _DOC_NO = re.compile(r"^(\d+)")
+ADVISOR_SOURCE = "Vom Steuerberater eingegeben"  # fundstelle of a typed value (no document)
 
 
 class ProfilWriter:
@@ -38,15 +58,18 @@ class ProfilWriter:
         extractions: list[DocumentExtraction],
         schema: ProfileSchema,
         settings: Settings,
+        confirmation: Confirmation | None = None,
     ):
         self.conn = conn
         self.draft = draft
         self.extractions = extractions
         self.schema = schema
         self.settings = settings
+        self.confirmation = confirmation  # None = unconfirmed publish (step 7)
         self.ranks = document_ranks(extractions, schema)
         self.report = PublishReport(project=draft.company_id)
         self.columns: dict[str, dict[str, str]] = {}  # table -> column -> SQL type
+        self.limits: dict[tuple[str, str], tuple] = {}  # (table, column) -> (len, prec, scale)
         self.dokument_ids: dict[str, int] = {}  # doc_id -> profil.dokument.id
         self.document_dates: dict[str, str | None] = {}
         self.deal_id = self.gesellschaft_id = 0
@@ -57,6 +80,8 @@ class ProfilWriter:
 
     async def publish(self) -> PublishReport:
         await self._load_columns()
+        await self._guard_state()
+        self._check_typed_values()
         await self._delete_previous()
         await self._insert_deal()
         await self._insert_dokumente()
@@ -66,17 +91,25 @@ class ProfilWriter:
                 await self._insert_list(spec)
         await self._fill_unknown_merkmale()
         await self.write_conflict_hints()
+        await self._record_state()
         return self.report
 
-    # Catalog and cleanup -------------------------------------------------------------
+    # Catalog, state and cleanup ------------------------------------------------------
 
     async def _load_columns(self) -> None:
         async with self.conn.cursor() as cur:
             await cur.execute(
                 # Cast to the base type without length/precision: an explicit cast to
                 # char(2) would silently truncate, an assignment to it raises instead.
+                # Length and numeric precision are loaded to check typed values (step 8).
                 "SELECT c.relname, a.attname, CASE WHEN t.typcategory = 'S' THEN 'text' "
-                "ELSE format_type(a.atttypid, NULL) END "
+                "ELSE format_type(a.atttypid, NULL) END, "
+                "CASE WHEN t.typcategory = 'S' AND a.atttypmod > 0 "
+                "THEN a.atttypmod - 4 END, "
+                "CASE WHEN a.atttypid = 'numeric'::regtype AND a.atttypmod > 0 "
+                "THEN ((a.atttypmod - 4) >> 16) & 65535 END, "
+                "CASE WHEN a.atttypid = 'numeric'::regtype AND a.atttypmod > 0 "
+                "THEN (a.atttypmod - 4) & 65535 END "
                 "FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
                 "JOIN pg_namespace n ON n.oid = c.relnamespace "
                 "JOIN pg_type t ON t.oid = a.atttypid "
@@ -84,10 +117,95 @@ class ProfilWriter:
                 "AND NOT a.attisdropped",
                 (SCHEMA,),
             )
-            for table, column, type_ in await cur.fetchall():
+            for table, column, type_, length, precision, scale in await cur.fetchall():
                 self.columns.setdefault(table, {})[column] = type_
+                self.limits[(table, column)] = (length, precision, scale)
         if "deal" not in self.columns:
             raise PublishError(f"schema '{SCHEMA}' not found: run the CLI with --init-db")
+
+    async def _guard_state(self) -> None:
+        """Unconfirmed publish only before confirmation; confirm only from published."""
+        cur = await self.conn.execute(
+            "SELECT state FROM pipeline.project_state WHERE company_id = %s FOR UPDATE",
+            (self.draft.company_id,),
+        )
+        row = await cur.fetchone()
+        state = row[0] if row else None
+        if self.confirmation is None and state not in (None, ProjectState.PUBLISHED):
+            raise refused_publish(self.draft.company_id, state)
+        if self.confirmation is not None and state != ProjectState.PUBLISHED:
+            raise StateError(
+                f"project '{self.draft.company_id}' is {state or 'not published'}: "
+                "confirm needs state published"
+            )
+
+    def _check_typed_values(self) -> None:
+        """Typed values must fit their column (length, numeric precision); errors per field,
+        because an explicit cast would truncate silently and a list row would be skipped."""
+        errors = []
+        for spec in self.schema.fields:
+            if spec.name not in self.draft.schema_fields:
+                continue
+            result = self.draft.field(spec.name)
+            table = spec.table or spec.name
+            typed = not spec.is_list and result.decision is not None and result.decision.typed
+            if typed and (message := self._column_error(table, spec.name, result.decision.value)):
+                errors.append(FieldError(field=spec.name, message=message))
+            for item in result.items:
+                if item.decision is None or not item.decision.typed:
+                    continue
+                for column, value in (item.decision.value or {}).items():
+                    if message := self._column_error(table, column, value):
+                        errors.append(
+                            FieldError(
+                                field=spec.name, key=item.key, message=f"{column}: {message}"
+                            )
+                        )
+        if errors:
+            raise DecisionError(errors)
+
+    def _column_error(self, table: str, column: str, value: Any) -> str | None:
+        length, precision, scale = self.limits.get((table, column), (None, None, None))
+        if isinstance(value, str) and length is not None and len(value) > length:
+            return f"too long (at most {length} characters)"
+        numeric = isinstance(value, int | float) and not isinstance(value, bool)
+        if numeric and precision is not None and abs(value) >= 10 ** (precision - scale):
+            return f"too large (less than {10 ** (precision - scale)})"
+        return None
+
+    async def _record_state(self) -> None:
+        """Published after an unconfirmed publish, confirmed after a confirm."""
+        if self.confirmation is None:
+            await self.conn.execute(
+                "INSERT INTO pipeline.project_state (company_id, state, published_at, "
+                "published_docs) VALUES (%s, 'published', now(), %s) "
+                "ON CONFLICT (company_id) DO UPDATE SET state = 'published', "
+                "published_at = now(), published_docs = EXCLUDED.published_docs, "
+                "last_error = NULL, updated_at = now()",
+                (self.draft.company_id, Jsonb(sorted(e.doc_id for e in self.extractions))),
+            )
+            return
+        await self.conn.execute(  # profile version 1: later advisor updates count up
+            "UPDATE pipeline.project_state SET state = 'confirmed', confirmed_by = %s, "
+            "confirmed_at = now(), draft_version = %s, profile_version = 1, "
+            "last_error = NULL, updated_at = now() WHERE company_id = %s",
+            (self.confirmation.by, self.confirmation.draft_version, self.draft.company_id),
+        )
+        await write_audit(
+            self.conn,
+            AuditEntry(
+                kind=AuditKind.PROFILE_CONFIRMED,
+                company_id=self.draft.company_id,
+                acted_by=self.confirmation.by,
+                new_value={
+                    "draft_version": self.confirmation.draft_version,
+                    "counts": self.confirmation.counts,
+                    "rows": self.report.rows,
+                    "hints_closed": self.report.hints_closed,
+                },
+                profile_version=1,
+            ),
+        )
 
     async def _delete_previous(self) -> None:
         """Replace an earlier publish of the same project. Rows are deleted from the leaves
@@ -146,11 +264,11 @@ class ProfilWriter:
     def _scalar_values(self, table: str) -> dict[str, Any]:
         values = {}
         for name, result in self._scalars(table).items():
-            if result.status is FieldStatus.MISSING:
-                continue
-            values[name] = result.chosen
             if result.status is FieldStatus.CONFLICT:
                 self._conflict_hint(name, result)
+            if result.chosen is None:  # nothing found, or left empty by the advisor
+                continue
+            values[name] = result.chosen
         missing = [
             spec.name
             for spec in self.schema.fields
@@ -191,7 +309,7 @@ class ProfilWriter:
 
     async def _insert_gesellschaft(self) -> None:
         values = self._scalar_values("gesellschaft")
-        provenance = self._provenance("gesellschaft", self.draft.field("name").chosen_group)
+        provenance = self._provenance("gesellschaft", self.draft.field("name"))
         self.gesellschaft_name = values["name"]
         self.gesellschaft_id = await self._insert(
             "gesellschaft",
@@ -205,8 +323,14 @@ class ProfilWriter:
             return
         table = spec.table or spec.name
         for item in self.draft.field(spec.name).items:
+            # Schema key order: a draft read back from jsonb has its keys reordered.
+            label = f"{spec.name} {_label({k: (item.key or {}).get(k) for k in spec.key or []})}"
+            if item.dropped:  # the advisor dropped the row: not written
+                self.report.skipped.append(f"{label}: dropped by the advisor")
+                if item.status is FieldStatus.CONFLICT:
+                    self._conflict_hint(label, item)
+                continue
             value = dict(item.chosen)
-            label = f"{spec.name} {_label(item.key)}"
             missing = [i.name for i in spec.items if i.required and value.get(i.name) is None]
             if missing:
                 await self._hint("plausibilitaet", label, f"Zeile übersprungen, fehlt: {missing}")
@@ -216,7 +340,7 @@ class ProfilWriter:
             parent = await self._parent(spec, table, value, row, label)
             if parent is None:
                 continue
-            row |= parent | self._provenance(table, item.chosen_group)
+            row |= parent | self._provenance(table, item)
             try:
                 async with self.conn.transaction():  # savepoint: a bad row skips only itself
                     row_id = await self._insert(table, row)
@@ -313,8 +437,10 @@ class ProfilWriter:
         spec = next((f for f in self.schema.fields if f.table == "merkmal_wert"), None)
         if spec is None:
             return
-        stated = {
-            item.key["merkmal_code"] for item in self.draft.field(spec.name).items if item.key
+        stated = {  # a dropped row counts as silence: unbekannt
+            item.key["merkmal_code"]
+            for item in self.draft.field(spec.name).items
+            if item.key and not item.dropped
         }
         for code in spec.item("merkmal_code").enum:
             if code not in stated:
@@ -351,10 +477,23 @@ class ProfilWriter:
             return "mittel"
         return "niedrig"
 
-    def _provenance(self, table: str, group: CandidateGroup | None) -> dict[str, Any]:
-        best = self._best(group)
+    def _provenance(self, table: str, result: FieldResult) -> dict[str, Any]:
+        """Citation of the strongest supporting candidate (file name and page, never the
+        evidence quote), or advisor provenance for a value the advisor typed."""
         columns = self.columns.get(table, {})
-        if best is None or "quelle_dok" not in columns:
+        if "quelle_dok" not in columns:
+            return {}
+        # veranlagung uses `stand` for the assessment status and `stand_meta` for the date.
+        date_column = "stand_meta" if "stand_meta" in columns else "stand"
+        if result.entered_by_advisor:
+            # The one exception to "no value without a source": a human is the source.
+            return {
+                "fundstelle": ADVISOR_SOURCE,
+                "konfidenz": "hoch",
+                date_column: self.confirmation.on if self.confirmation else None,
+            }
+        best = self._best(result.chosen_group)
+        if best is None:
             return {}
         dokument = self.dokument_ids.get(best.source_doc)
         where = (
@@ -362,14 +501,14 @@ class ProfilWriter:
             if dokument
             else f"{best.source_filename} S. {best.source_page}"
         )
+        if result.decision is not None and result.decision.typed:
+            where += "; teilweise vom Steuerberater eingegeben"
         provenance = {
             "quelle_dok": dokument,
-            "fundstelle": f"{where}: {best.evidence[:200]}",
+            "fundstelle": where,
             "konfidenz": self._konfidenz(best.confidence),
         }
-        # veranlagung uses `stand` for the assessment status and `stand_meta` for the date.
-        date_column = "stand_meta" if "stand_meta" in columns else "stand"
-        if date_column in columns and self.document_dates.get(best.source_doc):
+        if self.document_dates.get(best.source_doc):
             provenance[date_column] = self.document_dates[best.source_doc]
         return provenance
 
@@ -377,29 +516,41 @@ class ProfilWriter:
         self.conflicts.append((label, result))  # written last, once all documents exist
 
     async def write_conflict_hints(self) -> None:
+        """Open hint with the suggestion; with an advisor decision a closed (geklaert)
+        hint with the decision text. Values and file names only, never quotes."""
         for label, result in self.conflicts:
-            chosen = result.groups[result.suggestion]
-            others = [g for i, g in enumerate(result.groups) if i != result.suggestion]
-            options = "; ".join(f"{_short(g.value)} ({self._sources(g)})" for g in result.groups)
-            rank = chosen.best_rank if chosen.best_rank is not None else "?"
+            suggested = result.groups[result.suggestion]
+            chosen = result.chosen_group or suggested
+            others = [g for g in result.groups if g is not chosen]
+            options = "; ".join(f"{_short(g.value)} ({sources_text(g)})" for g in result.groups)
+            if result.decision is not None and self.confirmation is not None:
+                c = self.confirmation
+                entscheidung = f"{result.decision.text} (bestätigt von {c.by} am {c.on})"
+                status = "geklaert"
+            else:
+                rank = suggested.best_rank if suggested.best_rank is not None else "?"
+                entscheidung = (
+                    f"Vorschlag: {_short(suggested.value)} (Rang {rank}), "
+                    "vom Steuerberater zu bestätigen"
+                )
+                status = "offen"
             await self._hint(
                 "konflikt",
                 label,
                 f"Abweichende Werte: {options}",
+                status=status,
                 quelle_a=self._dokument(chosen),
                 quelle_b=self._dokument(others[0]) if others else None,
-                entscheidung=f"Vorschlag: {_short(chosen.value)} (Rang {rank}), "
-                "vom Steuerberater zu bestätigen",
+                entscheidung=entscheidung,
             )
-
-    def _sources(self, group: CandidateGroup) -> str:
-        return ", ".join(f"{c.source_filename} S. {c.source_page}" for c in group.candidates)
 
     def _dokument(self, group: CandidateGroup) -> int | None:
         best = self._best(group)
         return self.dokument_ids.get(best.source_doc) if best else None
 
-    async def _hint(self, art: str, feld: str, beschreibung: str, **extra: Any) -> None:
+    async def _hint(
+        self, art: str, feld: str, beschreibung: str, status: str = "offen", **extra: Any
+    ) -> None:
         await self._insert(
             "pruefhinweis",
             {
@@ -407,15 +558,23 @@ class ProfilWriter:
                 "art": art,
                 "feld": feld[:200],
                 "beschreibung": beschreibung,
-                "status": "offen",
+                "status": status,
                 **{k: v for k, v in extra.items() if v is not None},
             },
             count=False,
         )
         self.report.hints += 1
+        self.report.hints_closed += status == "geklaert"
 
     async def _insert(self, table: str, values: dict[str, Any], count: bool = True) -> int:
         columns = self.columns[table]
+        if self.confirmation is not None and "bestaetigt_von" in columns:
+            # Every written row is confirmed, including unbekannt Merkmale and rows the
+            # advisor accepted unchanged.
+            values = values | {
+                "bestaetigt_von": self.confirmation.by,
+                "bestaetigt_am": self.confirmation.on,
+            }
         unknown = set(values) - set(columns)
         if unknown:
             raise PublishError(f"{table}: no such columns {sorted(unknown)}")
@@ -443,9 +602,12 @@ async def publish_profile(
     extractions: list[DocumentExtraction],
     schema: ProfileSchema,
     settings: Settings,
+    confirmation: Confirmation | None = None,
 ) -> PublishReport:
-    """Run inside a transaction: all rows or none."""
-    return await ProfilWriter(conn, draft, extractions, schema, settings).publish()
+    """Run inside a transaction: all rows or none. With `confirmation` (step 8) the draft
+    carries the advisor's decisions and every row is stamped as confirmed."""
+    writer = ProfilWriter(conn, draft, extractions, schema, settings, confirmation)
+    return await writer.publish()
 
 
 def _label(key: dict[str, Any] | None) -> str:
