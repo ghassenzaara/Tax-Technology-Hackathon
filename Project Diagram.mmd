@@ -1,0 +1,85 @@
+flowchart TD
+    %% Pitch note
+    PITCH["Pitch point: contract clause about saving the company profile<br/>(optional annex, explicit consent, no raw DD data kept)"]:::note
+ 
+    %% Phase 1: Due Diligence
+    subgraph P1["1. Due Diligence: tax risks"]
+        DD["Steuerberater finishes the DD"]
+        UP["Upload folder to the platform<br/>PDF and Excel files"]
+        DD --> UP
+    end
+ 
+    %% Phase 2: Document processing
+    subgraph P2["2. Document processing"]
+        ROUTE{"File type?"}
+        PLUMB["pdfplumber<br/>text PDFs"]
+        OCR["OCR model<br/>scanned PDFs"]
+        XLS["Excel reader"]
+        UP --> ROUTE
+        ROUTE -->|text PDF| PLUMB
+        ROUTE -->|scanned PDF| OCR
+        ROUTE -->|Excel| XLS
+ 
+        subgraph AGENTS["One sub agent per document, same prompt, run in parallel"]
+            A1["Agent doc 1"]
+            A2["Agent doc 2"]
+            AN["Agent doc N"]
+        end
+        PLUMB --> AGENTS
+        OCR --> AGENTS
+        XLS --> AGENTS
+    end
+ 
+    %% Phase 3: Company profile
+    subgraph P3["3. Company profile"]
+        MERGE["Merge step: combine agent outputs<br/>(fixed JSON schema, source page per field, resolve conflicts)"]
+        REVIEW["Steuerberater reviews and confirms the profile"]
+        PROFILE[("Company profile<br/>structured fields + numeric values")]
+        FEAT["Turn each feature into a descriptive sentence"]
+        VEC[("Feature vectors<br/>one vector per feature")]
+        DEL["Delete raw DD documents"]
+        A1 --> MERGE
+        A2 --> MERGE
+        AN --> MERGE
+        MERGE --> REVIEW --> PROFILE
+        PROFILE --> FEAT --> VEC
+        PROFILE --> DEL
+    end
+ 
+    %% Phase 4: Screening loop
+    subgraph P4["4. Constant screening loop"]
+        NEWS["Fetch new and upcoming tax laws<br/>(BMF, NeuRIS, DIP, EUR-Lex)"]
+        CHUNK["Split each law into sections<br/>and embed each section"]
+        FILTER{"Stage 1: rule filter<br/>legal form, industry, region, thresholds"}
+        SIM{"Stage 2: max similarity over<br/>company features above threshold?"}
+        JUDGE{"Stage 3: LLM judge<br/>really relevant? why?"}
+        NEWS --> CHUNK --> FILTER
+        FILTER -->|passes| SIM
+        SKIP["Not relevant: skip"]
+        FILTER -->|no| SKIP
+        SIM -->|yes| JUDGE
+        SIM -->|no| SKIP
+        JUDGE -->|no| SKIP
+        SKIP -.->|next law| NEWS
+    end
+    VEC ~~~ NEWS
+    VEC --> SIM
+    PROFILE --> FILTER
+ 
+    %% Phase 5: Notify and offer
+    subgraph P5["5. Notify and reach out"]
+        ALERT["Alert the Steuerberater<br/>with matched feature and law section"]
+        DRAFT["Propose an email draft"]
+        CONF{"Confirm?"}
+        SEND["Send email to the client"]
+        CAL["Add event to the in-app calendar"]
+        ALERT --> DRAFT --> CONF
+        CONF -->|yes| SEND --> CAL
+        CONF -->|no / edit| DRAFT
+    end
+    JUDGE -->|yes| ALERT
+    CAL -.->|keep screening| NEWS
+ 
+    PITCH -.-> P1
+ 
+    classDef note fill:#fff4cc,stroke:#c9a400,color:#333
