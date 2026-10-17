@@ -1,0 +1,37 @@
+# Virtual env and Python caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Env files (the example is committed)
+.env
+.env.*
+!.env.example
+
+# Build output
+build/
+dist/
+*.egg-info/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Runtime data: uploaded documents, job workspaces, logs
+data/
+*.log
+
+# Local Claude settings
+.claude/settings.local.json
