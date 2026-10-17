@@ -66,6 +66,8 @@ class UpdateResult(BaseModel):
     embeddings_refreshed: bool = False
     embeddings_stale: bool = False
     refresh_error: str | None = None
+    screening: dict[str, Any] | None = None  # re-screening report (screen_after_update)
+    screening_error: str | None = None
 
 
 class DocumentCitation(BaseModel):

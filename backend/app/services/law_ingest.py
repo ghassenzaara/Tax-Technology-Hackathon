@@ -40,12 +40,16 @@ async def ingest_law(
     client: AsyncOpenAI,
     *,
     replace: bool = False,
+    filename: str | None = None,
 ) -> IngestReport:
-    """Parse, describe, split and embed one law; raises DuplicateLawError or IngestError."""
+    """Parse, describe, split and embed one law; raises DuplicateLawError or IngestError.
+    `filename` is the name stored and shown (an HTTP upload is stored under a generated
+    name); by default the file's own name."""
     start = perf_counter()
     path = Path(path)
+    name = filename or path.name
     if not path.is_file():
-        raise IngestError(f"not a file: {path}")
+        raise IngestError(f"not a file: {name}")
     digest = content_hash(path)
     existing = await repository.find_law(digest)
     if existing is not None and not replace:
@@ -55,25 +59,25 @@ async def ingest_law(
 
     doc = await DocumentParser(settings, client).parse_file(path)
     if doc.status in (DocStatus.FAILED, DocStatus.UNSUPPORTED):
-        raise IngestError(f"cannot parse {path.name}: {'; '.join(doc.warnings)}")
+        raise IngestError(f"cannot parse {name}: {'; '.join(doc.warnings)}")
     slots = asyncio.Semaphore(settings.embed_concurrency)
     try:
         metadata, tokens = await read_metadata(doc, settings, client, slots)
         vocabulary = await repository.list_norm_codes()
         split = split_law(doc, settings, vocabulary, list(metadata.tax_types))
         if not split.sections:
-            raise IngestError(f"{path.name} has no law text after removing boilerplate")
+            raise IngestError(f"{name} has no law text after removing boilerplate")
         vectors = await embed_texts(
             client, settings, slots, [s.embedding_text() for s in split.sections]
         )
     except IngestError:
         raise
     except Exception as exc:
-        raise IngestError(f"ingest of {path.name} failed: {exc}") from exc
+        raise IngestError(f"ingest of {name} failed: {exc}") from exc
     for section, vector in zip(split.sections, vectors, strict=True):
         section.model, section.vector = settings.embedding_model, vector
 
-    law = Law(**metadata.model_dump(), filename=path.name, content_hash=digest)
+    law = Law(**metadata.model_dump(), filename=name, content_hash=digest)
     law_id = await repository.save_law(law, split.sections, replace=replace)
     tokens += doc.token_usage  # OCR of scanned pages
     report = IngestReport(

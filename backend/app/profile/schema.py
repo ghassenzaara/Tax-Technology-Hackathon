@@ -20,10 +20,11 @@ import re
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, create_model
+from pydantic import AfterValidator, BaseModel, ConfigDict, create_model
 
+from app.mail.validate import address
 from app.models.extraction import Confidence
 
 _NAME = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -61,6 +62,7 @@ class FieldSpec(BaseModel):
     key: list[str] | None = None
     items: list["FieldSpec"] | None = None
     parent_column: str | None = None
+    format: Literal["email"] | None = None
 
     @property
     def is_list(self) -> bool:
@@ -165,6 +167,10 @@ def _parse_fields(raw_fields: list, *, context: str, nested: bool) -> list[Field
         elif item.get("multiple") and type_ == FieldType.BOOLEAN:
             raise SchemaError(f"{label}: boolean fields cannot be multiple")
 
+        if item.get("format") is not None and (
+            item["format"] != "email" or type_ != FieldType.STRING
+        ):
+            raise SchemaError(f"{label}: only string format 'email' is supported")
         fields.append(
             FieldSpec(
                 name=name,
@@ -179,6 +185,7 @@ def _parse_fields(raw_fields: list, *, context: str, nested: bool) -> list[Field
                 key=key,
                 items=items,
                 parent_column=item.get("parent_column"),
+                format=item.get("format"),
             )
         )
     return fields
@@ -200,7 +207,7 @@ _PROVENANCE = {
 def _python_type(spec: FieldSpec) -> Any:
     match spec.type:
         case FieldType.STRING:
-            base = str
+            base = Annotated[str, AfterValidator(address)] if spec.format == "email" else str
         case FieldType.INTEGER:
             base = int
         case FieldType.NUMBER:

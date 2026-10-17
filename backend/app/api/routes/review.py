@@ -1,5 +1,7 @@
 """Draft and Confirm (step 8). After a successful confirm, embedding and cleanup (steps 9
-and 10) run in the background; Progress reports them."""
+and 10) run as a background job; Progress reports it (and offers recovery if it fails)."""
+
+import logging
 
 from fastapi import APIRouter
 
@@ -12,6 +14,7 @@ from app.models.review import ConfirmRequest, ConfirmResult, ReviewView
 from app.models.run import RunState
 from app.services.confirm import confirm_profile, review_profile
 
+log = logging.getLogger("app.api")
 router = APIRouter(tags=["review"], responses=ERROR_RESPONSES)
 
 
@@ -62,5 +65,8 @@ async def confirm(services: ServicesDep, company_id: str, body: ConfirmBody) -> 
         decisions=body.decisions,
     )
     result = await confirm_profile(services.repository, services.schema, services.settings, request)
-    services.runs.start_advance(company_id)
+    try:
+        await services.jobs.submit_advance(company_id)
+    except Exception as exc:  # the confirmation stands; Progress offers recovery
+        log.warning("advance job of %s not started: %s", company_id, type(exc).__name__)
     return result

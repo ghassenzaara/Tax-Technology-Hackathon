@@ -1,9 +1,17 @@
 """Steps 13 to 15 service: screen companies against stored laws and store the matches.
 
 Rule filter (stage 1), max cosine score (stage 2), LLM judge (stage 3); each stage narrows
-the set. Only companies in state embedded or cleaned with fresh vectors are screened. A
-section already judged with an unchanged feature sentence is skipped (no LLM call) unless
-`force`. A dry run stops after stage 2 and stores nothing (the calibration tool).
+the set. Only companies in state embedded or cleaned with fresh vectors are screened.
+
+Every execution reconciles all earlier decisions of the company within its scope (one law
+or all laws). A section above the threshold reuses its stored verdict when the judge inputs
+are unchanged (input fingerprint, no LLM call) unless `force`; otherwise it is judged again.
+At most `match_max_candidates` sections are judged per execution; the rest are deferred to
+the next explicit request. Earlier decisions that no longer qualify (feature removed, rule
+excluded, below the threshold) become non-current and their new/seen alerts obsolete;
+deferred or failed ones stay non-current until judged. Decisions, alerts, coverage and the
+screened audit markers change in one transaction. A dry run stops after stage 2 and changes
+nothing (the calibration tool).
 """
 
 import asyncio
@@ -13,12 +21,20 @@ from time import perf_counter
 from openai import AsyncOpenAI
 
 from app.config import Settings
-from app.db.repository import Repository, StateError
-from app.matching.judge import Judge, JudgeOutcome
+from app.db.repository import BusyError, Repository, StateError
+from app.matching.judge import Judge, JudgeOutcome, input_fingerprint
 from app.matching.rules import filter_pairs
 from app.matching.score import MatchError, rank_sections
 from app.models.law import Law, LawSection
-from app.models.match import CompanyFeatures, Match, ScreenReport, SectionScore, Trigger
+from app.models.match import (
+    CompanyFeatures,
+    Invalidation,
+    Match,
+    ScreeningChanges,
+    ScreenReport,
+    SectionScore,
+    Trigger,
+)
 from app.models.project import ProjectState, ProjectStatus
 
 log = logging.getLogger(__name__)
@@ -54,11 +70,6 @@ def check_models(company: CompanyFeatures, sections: list[LawSection]) -> None:
             )
 
 
-def needs_judging(stored: Match | None, sentences: dict[str, str]) -> bool:
-    """New section, or the stored pair's feature is gone or has a new sentence."""
-    return stored is None or sentences.get(stored.feature_ref) != stored.feature_text
-
-
 class Screener:
     def __init__(self, repository: Repository, settings: Settings, client: AsyncOpenAI | None):
         self.repository = repository
@@ -80,38 +91,58 @@ class Screener:
         laws = {law.id: law for law in await self.repository.list_laws()}
         if law_id is not None and law_id not in laws:
             raise ScreenError(f"no law with id {law_id}")
+        if law_id is not None:
+            laws = {law_id: laws[law_id]}
         sections = await self.repository.list_law_sections(law_id)
+
+        async def one(cid: str) -> ScreenReport:
+            # A complete screening against every law also covers pending profile changes.
+            pending = (
+                [] if law_id is not None else await self.repository.pending_profile_changes(cid)
+            )
+            return await self.screen_company(
+                cid, laws, sections, dry_run, force, trigger, screened_entries=pending
+            )
+
         if company_id is not None:
-            return [await self.screen_company(company_id, laws, sections, dry_run, force, trigger)]
+            return [await one(company_id)]
         reports = []
         for state in await self.repository.list_project_states():
             try:
-                reports.append(
-                    await self.screen_company(
-                        state.company_id, laws, sections, dry_run, force, trigger
-                    )
-                )
-            except StateError as exc:
+                reports.append(await one(state.company_id))
+            except (StateError, BusyError) as exc:
                 reports.append(
                     ScreenReport(company_id=state.company_id, status="refused", message=str(exc))
+                )
+            except Exception as exc:  # one company's problem never stops the others
+                log.warning("screening of %s failed: %s", state.company_id, type(exc).__name__)
+                reports.append(
+                    ScreenReport(
+                        company_id=state.company_id,
+                        status="failed",
+                        message=f"{type(exc).__name__}: {exc}",
+                    )
                 )
         return reports
 
     async def screen_pending(self, company_id: str) -> ScreenReport:
-        """Re-screen after advisor updates: only changed or new features cost judge calls;
-        the audit entries get `screened_at` once every section was judged."""
+        """Re-screen after advisor updates, or finish deferred and failed work: only changed
+        judge inputs cost calls. The audit entries get `screened_at` in the reconciliation's
+        transaction, and only once every candidate section has a current decision."""
         pending = await self.repository.pending_profile_changes(company_id)
-        if not pending:
+        status = await self.repository.screening_status(company_id)
+        if not (pending or status.incomplete_laws or status.stale_decisions):
             return ScreenReport(
                 company_id=company_id,
                 trigger=Trigger.PROFIL_UPDATE,
                 status="nothing_to_do",
                 message="no profile change waits for screening",
             )
-        (report,) = await self.screen(company_id, trigger=Trigger.PROFIL_UPDATE)
-        if not report.unjudged:
-            await self.repository.mark_screened(pending)
-        return report
+        laws = {law.id: law for law in await self.repository.list_laws()}
+        sections = await self.repository.list_law_sections()
+        return await self.screen_company(
+            company_id, laws, sections, trigger=Trigger.PROFIL_UPDATE, screened_entries=pending
+        )
 
     async def screen_company(
         self,
@@ -121,7 +152,9 @@ class Screener:
         dry_run: bool = False,
         force: bool = False,
         trigger: Trigger = Trigger.LAW,
+        screened_entries: list[int] = (),
     ) -> ScreenReport:
+        """`laws` is the scope: every earlier decision on these laws is reconciled."""
         start = perf_counter()
         state = await self.repository.get_project_state(company_id)
         check_state(company_id, state)
@@ -147,18 +180,25 @@ class Screener:
             candidates = [s for s in report.scored if s.passed]  # stage 2
             report.candidates = len(candidates)
             if not dry_run:
-                await self._judge(company, candidates, report, force, state.profile_version)
+                changes = await self._judge(
+                    company, candidates, report, force, state.profile_version, sorted(laws)
+                )
+                if report.complete:
+                    changes.screened_entries = list(screened_entries)
+                await self.repository.apply_screening(changes)
         finally:
             if not dry_run:
                 await self.repository.end_step(company_id)
         report.seconds = perf_counter() - start
         log.info(
-            "%s; project=%s pairs=%d skipped=%d unjudged=%d dry_run=%s",
+            "%s; project=%s pairs=%d skipped=%d unjudged=%d deferred=%d invalidated=%d dry_run=%s",
             report.headline(),
             company_id,
             report.pairs,
             report.skipped,
             len(report.unjudged),
+            len(report.deferred),
+            report.invalidated,
             dry_run,
         )
         return report
@@ -170,30 +210,70 @@ class Screener:
         report: ScreenReport,
         force: bool,
         profile_version: int | None,
-    ) -> None:
-        """Stage 3 for the sections that need it, then store the judged pairs."""
-        previous = await self.repository.list_matches(company.company_id)
-        stored = {m.law_section_id: m for m in previous}
-        sentences = {f.ref: f.text_basis for f in company.features}
-        todo = [
-            s for s in candidates if force or needs_judging(stored.get(s.section.id), sentences)
-        ]
-        report.skipped = len(candidates) - len(todo)
+        law_ids: list[int],
+    ) -> ScreeningChanges:
+        """Stage 3 for the sections whose inputs changed, within the judge budget, plus
+        the reconciliation of every earlier decision in scope."""
+        previous = {
+            m.law_section_id: m
+            for m in await self.repository.list_matches(company.company_id, include_history=True)
+            if m.law_id in law_ids
+        }
+        reused, todo = [], []
+        for candidate in candidates:  # highest score first
+            fingerprint = input_fingerprint(candidate, self.settings)
+            stored = previous.get(candidate.section.id)
+            if not force and stored is not None and stored.input_fingerprint == fingerprint:
+                reused.append(candidate.section.id)
+            else:
+                todo.append((candidate, fingerprint))
+        budget = self.settings.match_max_candidates  # cached sections cost no budget
+        todo, deferred = todo[:budget], todo[budget:]
+        report.skipped = len(reused)
+        report.deferred = [c.section.section_ref for c, _ in deferred]
+
         judge = Judge(self.settings, self.client, self.slots)
-        outcomes = await asyncio.gather(*(judge.judge_section(s) for s in todo))
-        matches = []
-        for candidate, outcome in zip(todo, outcomes, strict=True):
+        outcomes = await asyncio.gather(*(judge.judge_section(c) for c, _ in todo))
+        open_work = {law_id: [0, 0] for law_id in law_ids}  # law -> deferred, unjudged
+        matches, invalidated = [], {}
+        for (candidate, fingerprint), outcome in zip(todo, outcomes, strict=True):
             report.input_tokens += outcome.tokens.input_tokens
             report.output_tokens += outcome.tokens.output_tokens
             if outcome.unjudged:
                 report.unjudged.append(candidate.section.section_ref)
+                invalidated[candidate.section.id] = Invalidation.JUDGE_FAILED
+                open_work[candidate.law.id][1] += 1
                 continue
             matches.append(
-                self._match(company, candidate, outcome, report.trigger, profile_version)
+                self._match(
+                    company, candidate, outcome, report.trigger, profile_version, fingerprint
+                )
             )
-        await self.repository.save_matches(matches)
+        for candidate, _ in deferred:
+            invalidated[candidate.section.id] = Invalidation.DEFERRED
+            open_work[candidate.law.id][0] += 1
+        for section_id in previous.keys() - {c.section.id for c in candidates}:
+            invalidated[section_id] = Invalidation.NOT_CANDIDATE  # no longer qualifies
+
+        # Only earlier decisions change; an unchanged invalidation is no update.
+        invalidated = {
+            sid: reason
+            for sid, reason in invalidated.items()
+            if sid in previous
+            and (previous[sid].is_current or previous[sid].invalidation_reason != reason)
+        }
         report.judged = report.stored = len(matches)
         report.hits = sum(m.judge_relevant for m in matches)
+        report.invalidated = sum(previous[sid].is_current for sid in invalidated)
+        return ScreeningChanges(
+            company_id=company.company_id,
+            law_ids=law_ids,
+            profile_version=profile_version,
+            judged=matches,
+            reused=reused,
+            invalidated=invalidated,
+            coverage={law_id: (d, u) for law_id, (d, u) in open_work.items()},
+        )
 
     def _match(
         self,
@@ -202,6 +282,7 @@ class Screener:
         outcome: JudgeOutcome,
         trigger: Trigger,
         profile_version: int | None,
+        fingerprint: str,
     ) -> Match:
         pair, verdict = outcome.pair, outcome.verdict
         return Match(
@@ -222,4 +303,6 @@ class Screener:
             model=self.settings.openai_model,
             trigger=trigger,
             profile_version=profile_version,
+            is_current=True,
+            input_fingerprint=fingerprint,
         )

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "DD Monitor API",
-    "description": "Backend of the DD regulatory monitoring platform (steps 0 to 10).\n\nFlow: Upload, poll Progress every 1 to 2 seconds until the run is finished, Draft, Confirm\n(embedding and cleanup then run in the background; Progress shows the project state),\nProfile, Update, Audit. Ids are opaque strings. No authentication (single user).\n\nEvery error has the shape `{code, message, details, error_id}`. Codes:\n`validation`, `bad_request`, `empty_upload`, `upload_too_large`, `not_found`, `wrong_state`, `stale_draft`, `stale_profile`, `busy`, `run_active`, `publish_failed`, `not_supported`, `database_unavailable`, `method_not_allowed`, `internal_error`.\n",
+    "description": "Backend of the DD regulatory monitoring platform (steps 0 to 18).\n\nFlow: Upload, poll Progress every 1 to 2 seconds until the run is finished, Draft, Confirm\n(embedding and cleanup then run as a background job; Progress shows it), Profile, Update,\nAudit. Legal sources: upload a PDF (a job), list them. Screening: start a job, poll it,\nread the company's matches. Alerts: list, open, mark seen or dismiss; preview the email,\nedit the template, send the confirmed email, read the outreach history.\n\nLong work answers 202 with a job (`Location: /api/jobs/{id}`); poll it. Failed or\ninterrupted jobs are retried explicitly; Recover selects the work from the project state.\nNothing is resumed automatically after a restart. Calendar is not part of the platform.\nIds are opaque. No authentication (single user).\n\nEvery error has the shape `{code, message, details, error_id, outreach_id}`. Codes:\n`validation`, `bad_request`, `empty_upload`, `upload_too_large`, `not_found`, `wrong_state`, `stale_draft`, `stale_profile`, `busy`, `run_active`, `duplicate`, `send_pending`, `already_sent`, `send_failed`, `mail_unavailable`, `llm_unavailable`, `publish_failed`, `not_supported`, `database_unavailable`, `method_not_allowed`, `internal_error`.\n",
     "version": "0.1.0"
   },
   "paths": {
@@ -45,7 +45,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -86,6 +86,16 @@
           },
           "501": {
             "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
             "content": {
               "application/json": {
                 "schema": {
@@ -156,7 +166,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -197,6 +207,26 @@
           },
           "501": {
             "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -258,7 +288,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -299,6 +329,26 @@
           },
           "501": {
             "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -360,7 +410,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -401,6 +451,26 @@
           },
           "501": {
             "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -463,7 +533,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -504,6 +574,26 @@
           },
           "501": {
             "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -576,7 +666,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -617,6 +707,26 @@
           },
           "501": {
             "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -667,7 +777,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -708,6 +818,26 @@
           },
           "501": {
             "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -770,7 +900,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -818,6 +948,26 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -828,7 +978,7 @@
           "profile"
         ],
         "summary": "Update entries of a confirmed profile",
-        "description": "All or nothing; there is no undo (ask \"are you sure\" first). Refused before\nconfirmation (wrong_state), while confirm, embedding or cleanup runs (busy) and on a\nstale profile version (stale_profile); invalid values come back per field. The vectors\nare refreshed in the background; Progress shows \"embeddings stale\" until then.",
+        "description": "All or nothing; there is no undo (ask \"are you sure\" first). Refused before\nconfirmation (wrong_state), while a step or job of the company runs (busy) and on a\nstale profile version (stale_profile); invalid values come back per field. The vectors\nare refreshed by a background job (then, with SCREEN_AFTER_UPDATE, the changes are\nre-screened); Progress shows the job and \"embeddings stale\" until then. A contact\naddress edit needs neither.",
         "operationId": "update_api_companies__company_id__profile_update_post",
         "parameters": [
           {
@@ -883,7 +1033,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -924,6 +1074,26 @@
           },
           "501": {
             "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -1055,7 +1225,7 @@
             }
           },
           "409": {
-            "description": "wrong_state, stale_draft, stale_profile, busy, run_active",
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
             "content": {
               "application/json": {
                 "schema": {
@@ -1103,6 +1273,2222 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/laws": {
+      "get": {
+        "tags": [
+          "laws and screening"
+        ],
+        "summary": "Stored legal sources",
+        "description": "Metadata, \"Zusammenfassung\" (`summary`), \"Was ändert sich?\" (`change_summary`) and the\nnumber of sections per source.",
+        "operationId": "laws_api_laws_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LawList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "laws and screening"
+        ],
+        "summary": "Upload one legal source (PDF) and start its ingestion",
+        "description": "Stores the PDF under a generated name, then parses, describes, splits and embeds it\nin the background. The same content twice is refused (duplicate) unless `replace`.\nPoll the job; its result is the ingest report with the new law id.",
+        "operationId": "upload_law_api_laws_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_law_api_laws_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/laws/{law_id}": {
+      "get": {
+        "tags": [
+          "laws and screening"
+        ],
+        "summary": "One source with sections",
+        "description": "Metadata and every section's text with pages, norms and tax types (no vectors).",
+        "operationId": "law_api_laws__law_id__get",
+        "parameters": [
+          {
+            "name": "law_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Law Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LawDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/screenings": {
+      "post": {
+        "tags": [
+          "laws and screening"
+        ],
+        "summary": "Start screening (one or every company, one or every law)",
+        "description": "Reconciles every earlier decision in scope; unchanged judge inputs reuse their\nverdict (no LLM call); at most the configured number of sections is judged per\nexecution, the rest is reported as deferred (start another screening). `dry_run`\nstops after scoring and changes nothing. Poll the job for the reports.",
+        "operationId": "screen_api_screenings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreeningBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies/{company_id}/matches": {
+      "get": {
+        "tags": [
+          "laws and screening"
+        ],
+        "summary": "Judged matches of a company",
+        "description": "Current decisions by default; `include_history` adds invalidated ones (with\n`is_current=false` and `invalidation_reason`), whose verdict is history only.",
+        "operationId": "matches_api_companies__company_id__matches_get",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "law_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Law Id"
+            }
+          },
+          {
+            "name": "only_hits",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Only Hits"
+            }
+          },
+          {
+            "name": "include_history",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include History"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts": {
+      "get": {
+        "tags": [
+          "alerts and email"
+        ],
+        "summary": "Alerts with status counts",
+        "description": "Default: new and seen alerts, new first then by score. `counts` covers every status\nof the filtered company/law. An alert with `match.is_current=false` waits for\nscreening and cannot be sent.",
+        "operationId": "alert_list_api_alerts_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlertStatus"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "company_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "law_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Law Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts/{alert_id}": {
+      "get": {
+        "tags": [
+          "alerts and email"
+        ],
+        "summary": "One alert (stays unseen)",
+        "operationId": "alert_api_alerts__alert_id__get",
+        "parameters": [
+          {
+            "name": "alert_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Alert Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts/{alert_id}/seen": {
+      "post": {
+        "tags": [
+          "alerts and email"
+        ],
+        "summary": "Mark an alert seen",
+        "operationId": "seen_api_alerts__alert_id__seen_post",
+        "parameters": [
+          {
+            "name": "alert_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Alert Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts/{alert_id}/dismiss": {
+      "post": {
+        "tags": [
+          "alerts and email"
+        ],
+        "summary": "Dismiss an alert",
+        "operationId": "dismiss_api_alerts__alert_id__dismiss_post",
+        "parameters": [
+          {
+            "name": "alert_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Alert Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DismissBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/email-template": {
+      "get": {
+        "tags": [
+          "alerts and email"
+        ],
+        "summary": "The fixed template",
+        "operationId": "template_api_email_template_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailTemplate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "alerts and email"
+        ],
+        "summary": "Edit the template (audited)",
+        "description": "The explicit template edit; editing one email never changes the template.",
+        "operationId": "edit_template_api_email_template_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailTemplate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts/{alert_id}/email-preview": {
+      "get": {
+        "tags": [
+          "alerts and email"
+        ],
+        "summary": "The template and the client's address for one alert",
+        "description": "Refused when the alert cannot be sent (sent, pending, closed, not current, stale\nvectors or active work of the company).",
+        "operationId": "preview_api_alerts__alert_id__email_preview_get",
+        "parameters": [
+          {
+            "name": "alert_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Alert Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts/{alert_id}/send": {
+      "post": {
+        "tags": [
+          "alerts and email"
+        ],
+        "summary": "Send the confirmed email (exactly these values)",
+        "description": "Needs `confirmed=true`. The send guard is checked again while the pending record is\nreserved. Errors: send_pending (unresolved earlier attempt or uncertain delivery,\nwith outreach_id), already_sent, send_failed (502, a new send may follow),\nmail_unavailable (503).",
+        "operationId": "send_api_alerts__alert_id__send_post",
+        "parameters": [
+          {
+            "name": "alert_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Alert Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outreach"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/outreach": {
+      "get": {
+        "tags": [
+          "alerts and email"
+        ],
+        "summary": "Sent-email history",
+        "description": "Snapshots of every send attempt (recipient, subject, body, status), newest first.",
+        "operationId": "outreach_api_outreach_get",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "alert_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Alert Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Poll a background job",
+        "description": "Status queued, running, succeeded, failed or interrupted; `result` when done,\na sanitized `error` when failed. Poll every 1 to 2 seconds.",
+        "operationId": "job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/retry": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Retry a failed or interrupted job (a new attempt)",
+        "description": "The new attempt links `retry_of` and checks the current state when it runs. Never\nresends an email (sending is not a job).",
+        "operationId": "retry_api_jobs__job_id__retry_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies/{company_id}/recover": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Finish interrupted or failed work after confirmation",
+        "description": "Selects the work from the current state: confirmed -> embed and clean up; stale\nvectors -> rebuild them (and clean up if needed); embedded -> clean up; cleaned ->\nnothing, unless files are left or configured screening is pending. Answers 202 with\nthe job, or 200 without one when there is nothing to do. Never repeats the\nconfirmation and never sends an email; before confirmation use rerun.",
+        "operationId": "recover_api_companies__company_id__recover_post",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "recovery job started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1127,6 +3513,154 @@
           "size"
         ],
         "title": "AcceptedFile"
+      },
+      "Alert": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "match_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Id"
+          },
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AlertStatus"
+          },
+          "dismissed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissed Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "status_changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Status Changed At"
+          },
+          "match": {
+            "$ref": "#/components/schemas/Match"
+          },
+          "law": {
+            "$ref": "#/components/schemas/Law"
+          },
+          "section_ref": {
+            "type": "string",
+            "title": "Section Ref"
+          },
+          "section_text": {
+            "type": "string",
+            "title": "Section Text"
+          },
+          "page_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page From"
+          },
+          "page_to": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page To"
+          },
+          "recipient_available": {
+            "type": "boolean",
+            "title": "Recipient Available",
+            "default": false
+          },
+          "outreach": {
+            "items": {
+              "$ref": "#/components/schemas/Outreach"
+            },
+            "type": "array",
+            "title": "Outreach",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "match_id",
+          "company_id",
+          "status",
+          "created_at",
+          "status_changed_at",
+          "match",
+          "law",
+          "section_ref",
+          "section_text"
+        ],
+        "title": "Alert"
+      },
+      "AlertList": {
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array",
+            "title": "Alerts"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AlertStatus"
+            },
+            "type": "object",
+            "title": "Counts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alerts",
+          "counts"
+        ],
+        "title": "AlertList"
+      },
+      "AlertStatus": {
+        "type": "string",
+        "enum": [
+          "new",
+          "seen",
+          "dismissed",
+          "actioned",
+          "obsolete"
+        ],
+        "title": "AlertStatus"
       },
       "AppliedDecision": {
         "properties": {
@@ -1410,6 +3944,27 @@
         },
         "type": "object",
         "title": "Body_upload_api_uploads_post"
+      },
+      "Body_upload_law_api_laws_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "the legal source as one PDF"
+          },
+          "replace": {
+            "type": "boolean",
+            "title": "Replace",
+            "description": "replace a stored source with the same content",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_law_api_laws_post"
       },
       "Candidate": {
         "properties": {
@@ -1929,6 +4484,34 @@
         "title": "DecisionAction",
         "description": "What the advisor decided for one field or list row (step 8)."
       },
+      "Direction": {
+        "type": "string",
+        "enum": [
+          "risiko",
+          "chance",
+          "neutral"
+        ],
+        "title": "Direction"
+      },
+      "DismissBody": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DismissBody"
+      },
       "DocumentCitation": {
         "properties": {
           "id": {
@@ -2028,6 +4611,109 @@
         ],
         "title": "DocumentProgress"
       },
+      "EmailPreview": {
+        "properties": {
+          "alert_id": {
+            "type": "integer",
+            "title": "Alert Id"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "recipient": {
+            "type": "string",
+            "title": "Recipient"
+          },
+          "recipient_source": {
+            "type": "string",
+            "enum": [
+              "profile",
+              "missing"
+            ],
+            "title": "Recipient Source"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "sender": {
+            "type": "string",
+            "title": "Sender"
+          },
+          "mail_mode": {
+            "type": "string",
+            "enum": [
+              "log",
+              "smtp"
+            ],
+            "title": "Mail Mode"
+          },
+          "redirect_active": {
+            "type": "boolean",
+            "title": "Redirect Active"
+          },
+          "template_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Template Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alert_id",
+          "subject",
+          "body",
+          "recipient",
+          "recipient_source",
+          "sender",
+          "mail_mode",
+          "redirect_active",
+          "template_updated_at"
+        ],
+        "title": "EmailPreview"
+      },
+      "EmailTemplate": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "const": 1,
+            "title": "Id",
+            "default": 1
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "subject",
+          "body",
+          "updated_at"
+        ],
+        "title": "EmailTemplate"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -2055,6 +4741,17 @@
               }
             ],
             "title": "Error Id"
+          },
+          "outreach_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outreach Id"
           }
         },
         "type": "object",
@@ -2077,6 +4774,12 @@
           "stale_profile",
           "busy",
           "run_active",
+          "duplicate",
+          "send_pending",
+          "already_sent",
+          "send_failed",
+          "mail_unavailable",
+          "llm_unavailable",
           "publish_failed",
           "not_supported",
           "database_unavailable",
@@ -2314,6 +5017,542 @@
         ],
         "title": "IncompleteDocument"
       },
+      "Invalidation": {
+        "type": "string",
+        "enum": [
+          "not_candidate",
+          "profile_changed",
+          "deferred",
+          "judge_failed",
+          "migrated"
+        ],
+        "title": "Invalidation",
+        "description": "Why a stored decision is no longer current. Final reasons obsolete open alerts;\npending reasons wait for the next explicit screening (the alert keeps its status but\ncannot be sent)."
+      },
+      "JobOperation": {
+        "type": "string",
+        "enum": [
+          "law_ingest",
+          "screen",
+          "advance",
+          "refresh"
+        ],
+        "title": "JobOperation"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "interrupted"
+        ],
+        "title": "JobStatus"
+      },
+      "JobView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/JobOperation"
+          },
+          "company_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus",
+            "default": "queued"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params",
+            "default": {}
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "retry_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Of"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "operation"
+        ],
+        "title": "JobView",
+        "description": "What the API returns: no server paths, credentials or vectors."
+      },
+      "Law": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/LawKind"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Title"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "effective_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LawStatus"
+          },
+          "legal_forms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Legal Forms",
+            "default": []
+          },
+          "tax_types": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "KSt",
+                "GewSt",
+                "USt",
+                "GrESt",
+                "ESt",
+                "LSt"
+              ]
+            },
+            "type": "array",
+            "title": "Tax Types",
+            "default": []
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "change_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Summary"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "ingested_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingested At"
+          },
+          "sections": {
+            "type": "integer",
+            "title": "Sections",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "title",
+          "status",
+          "filename",
+          "content_hash"
+        ],
+        "title": "Law",
+        "description": "A row of `screening.law`."
+      },
+      "LawDetail": {
+        "properties": {
+          "law": {
+            "$ref": "#/components/schemas/Law"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionView"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "law",
+          "sections"
+        ],
+        "title": "LawDetail"
+      },
+      "LawKind": {
+        "type": "string",
+        "enum": [
+          "gesetz",
+          "gesetzentwurf",
+          "bmf_schreiben",
+          "verordnung",
+          "other"
+        ],
+        "title": "LawKind"
+      },
+      "LawList": {
+        "properties": {
+          "laws": {
+            "items": {
+              "$ref": "#/components/schemas/Law"
+            },
+            "type": "array",
+            "title": "Laws"
+          }
+        },
+        "type": "object",
+        "required": [
+          "laws"
+        ],
+        "title": "LawList"
+      },
+      "LawStatus": {
+        "type": "string",
+        "enum": [
+          "in_kraft",
+          "entwurf",
+          "angekuendigt"
+        ],
+        "title": "LawStatus"
+      },
+      "Match": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "gesellschaft_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gesellschaft Id"
+          },
+          "law_id": {
+            "type": "integer",
+            "title": "Law Id"
+          },
+          "law_section_id": {
+            "type": "integer",
+            "title": "Law Section Id"
+          },
+          "objekt_typ": {
+            "type": "string",
+            "title": "Objekt Typ"
+          },
+          "objekt_id": {
+            "type": "integer",
+            "title": "Objekt Id"
+          },
+          "feature_text": {
+            "type": "string",
+            "title": "Feature Text"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "norm_match": {
+            "type": "boolean",
+            "title": "Norm Match",
+            "default": false
+          },
+          "form_unknown": {
+            "type": "boolean",
+            "title": "Form Unknown",
+            "default": false
+          },
+          "judge_relevant": {
+            "type": "boolean",
+            "title": "Judge Relevant"
+          },
+          "judge_direction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Direction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "judge_reason": {
+            "type": "string",
+            "title": "Judge Reason"
+          },
+          "judge_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Confidence"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger",
+            "default": "law"
+          },
+          "profile_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Version"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current",
+            "default": true
+          },
+          "input_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Fingerprint"
+          },
+          "invalidation_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Invalidation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "section_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Ref"
+          },
+          "law_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Law Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_id",
+          "law_id",
+          "law_section_id",
+          "objekt_typ",
+          "objekt_id",
+          "feature_text",
+          "score",
+          "judge_relevant",
+          "judge_reason",
+          "model"
+        ],
+        "title": "Match",
+        "description": "A row of `screening.match`: one judged pair per company and law section."
+      },
+      "MatchList": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/Match"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "matches"
+        ],
+        "title": "MatchList"
+      },
       "OpenDecision": {
         "properties": {
           "field": {
@@ -2360,6 +5599,126 @@
         ],
         "title": "OpenDecision",
         "description": "Something the advisor must decide before the profile can be confirmed."
+      },
+      "Outreach": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id",
+            "default": 0
+          },
+          "alert_id": {
+            "type": "integer",
+            "title": "Alert Id"
+          },
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "recipient": {
+            "type": "string",
+            "title": "Recipient"
+          },
+          "delivered_to": {
+            "type": "string",
+            "title": "Delivered To"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "delivery_subject": {
+            "type": "string",
+            "title": "Delivery Subject"
+          },
+          "sent_body": {
+            "type": "string",
+            "title": "Sent Body"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sent",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "provider_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Message Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "template_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Template Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alert_id",
+          "company_id",
+          "recipient",
+          "delivered_to",
+          "subject",
+          "delivery_subject",
+          "sent_body",
+          "created_at",
+          "template_updated_at"
+        ],
+        "title": "Outreach"
+      },
+      "OutreachList": {
+        "properties": {
+          "outreach": {
+            "items": {
+              "$ref": "#/components/schemas/Outreach"
+            },
+            "type": "array",
+            "title": "Outreach"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outreach"
+        ],
+        "title": "OutreachList"
       },
       "ProfileDraft": {
         "properties": {
@@ -2519,6 +5878,43 @@
             "type": "array",
             "title": "Documents",
             "default": []
+          },
+          "active_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recovery": {
+            "$ref": "#/components/schemas/RecoveryView",
+            "default": {
+              "available": false,
+              "reason": ""
+            }
+          },
+          "screening": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreeningStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2640,6 +6036,67 @@
         },
         "type": "object",
         "title": "ProjectView"
+      },
+      "RecoveryResponse": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "RecoveryResponse"
+      },
+      "RecoveryView": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": false
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "RecoveryView"
       },
       "RejectedFile": {
         "properties": {
@@ -2804,6 +6261,239 @@
         ],
         "title": "RunView"
       },
+      "ScreeningBody": {
+        "properties": {
+          "company_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Id"
+          },
+          "law_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Law Id"
+          },
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "default": false
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ScreeningBody"
+      },
+      "ScreeningStatus": {
+        "properties": {
+          "pending_changes": {
+            "type": "integer",
+            "title": "Pending Changes",
+            "default": 0
+          },
+          "incomplete_laws": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Incomplete Laws",
+            "default": []
+          },
+          "unscreened_laws": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Unscreened Laws",
+            "default": []
+          },
+          "stale_decisions": {
+            "type": "integer",
+            "title": "Stale Decisions",
+            "default": 0
+          },
+          "pending": {
+            "type": "boolean",
+            "title": "Pending",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending"
+        ],
+        "title": "ScreeningStatus",
+        "description": "Is screening of the company up to date? Shown in Progress."
+      },
+      "SectionView": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "nr": {
+            "type": "integer",
+            "title": "Nr"
+          },
+          "section_ref": {
+            "type": "string",
+            "title": "Section Ref"
+          },
+          "heading": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading"
+          },
+          "page_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page From"
+          },
+          "page_to": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page To"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "norms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Norms",
+            "default": []
+          },
+          "tax_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tax Types",
+            "default": []
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "nr",
+          "section_ref",
+          "text",
+          "model"
+        ],
+        "title": "SectionView",
+        "description": "A law section without its vector."
+      },
+      "SendBody": {
+        "properties": {
+          "recipient": {
+            "type": "string",
+            "title": "Recipient"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirmed"
+          },
+          "template_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "recipient",
+          "subject",
+          "body",
+          "confirmed"
+        ],
+        "title": "SendBody",
+        "description": "The final values from the UI; the backend sends exactly these."
+      },
+      "TemplateBody": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject",
+          "body"
+        ],
+        "title": "TemplateBody"
+      },
+      "Trigger": {
+        "type": "string",
+        "enum": [
+          "law",
+          "profil_update"
+        ],
+        "title": "Trigger"
+      },
       "UpdateBody": {
         "properties": {
           "profile_version": {
@@ -2890,6 +6580,29 @@
               }
             ],
             "title": "Refresh Error"
+          },
+          "screening": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screening"
+          },
+          "screening_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screening Error"
           }
         },
         "type": "object",

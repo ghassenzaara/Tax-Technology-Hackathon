@@ -6,10 +6,15 @@ the configured advisor label.
 """
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.audit import AuditEntry
+from app.models.job import JobView
+from app.models.law import Law
+from app.models.match import Match, ScreeningStatus
+from app.models.outreach import Outreach
 from app.models.project import ProjectState
 from app.models.review import Decision
 from app.models.run import RunState
@@ -63,11 +68,21 @@ class ProjectView(BaseModel):
     cleaned_at: datetime | None = None
 
 
+class RecoveryView(BaseModel):
+    available: bool = False  # the recover call would start work
+    action: str | None = None  # embed_and_cleanup | rebuild_vectors | cleanup | screen_pending
+    reason: str = ""
+
+
 class ProgressResponse(BaseModel):
     company_id: str
     project: ProjectView
     run: RunView | None = None  # the latest run
     documents: list[DocumentProgress] = []  # of the latest run
+    active_job: JobView | None = None  # advance, refresh or screening of the company
+    latest_job: JobView | None = None  # the newest job of the company (its result or error)
+    recovery: RecoveryView = RecoveryView()
+    screening: ScreeningStatus | None = None  # after embedding: is screening up to date?
 
 
 class ConfirmBody(BaseModel):
@@ -101,3 +116,75 @@ class CompanyList(BaseModel):
 
 class AuditList(BaseModel):
     entries: list[AuditEntry]  # newest first
+
+
+class LawList(BaseModel):
+    laws: list[Law]  # oldest first, with section counts
+
+
+class SectionView(BaseModel):
+    """A law section without its vector."""
+
+    id: int
+    nr: int
+    section_ref: str
+    heading: str | None = None
+    page_from: int | None = None
+    page_to: int | None = None
+    text: str
+    norms: list[str] = []
+    tax_types: list[str] = []
+    model: str
+
+
+class LawDetail(BaseModel):
+    law: Law  # metadata, summaries and section count
+    sections: list[SectionView]  # in law order
+
+
+class ScreeningBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    company_id: str | None = None  # None: every eligible company
+    law_id: int | None = None  # None: every stored law
+    force: bool = False  # judge again even when the inputs are unchanged
+    dry_run: bool = False  # stages 1 and 2 only; nothing changes, no LLM call
+
+
+class MatchList(BaseModel):
+    matches: list[Match]  # hits first, then by score
+
+
+class RecoveryResponse(BaseModel):
+    action: str | None = None
+    reason: str
+    job: JobView | None = None  # None: nothing to recover (200)
+
+
+class DismissBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+class TemplateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject: str
+    body: str
+
+
+class SendBody(BaseModel):
+    """The final values from the UI; the backend sends exactly these."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    recipient: str
+    subject: str
+    body: str
+    confirmed: Literal[True]  # the advisor confirmed this exact email
+    template_updated_at: datetime | None = None  # from the preview
+
+
+class OutreachList(BaseModel):
+    outreach: list[Outreach]  # newest first

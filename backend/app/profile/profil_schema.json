@@ -73,6 +73,9 @@
     {"name": "finanzamt", "table": "gesellschaft", "type": "string",
      "description": "Tax office (Finanzamt) responsible for the target company."},
 
+    {"name": "ansprechpartner_email", "table": "gesellschaft", "type": "string", "format": "email",
+     "description": "M: explicitly stated email address of the CLIENT contact person or client company (target company side). Never an advisor, Steuerberater, Kanzlei or law firm address. Leave null if absent; never infer or guess an address. Cite the page and evidence. This contact is not an embedding or judge feature."},
+
     {"name": "merkmal", "table": "merkmal_wert", "type": "list", "key": ["merkmal_code"],
      "description": "Yes/no/unknown facts about the target company. One entry per code the document makes a statement about. Codes: B04 KSt/GewSt-Organschaft exists (a draft profit transfer agreement is NOT an existing Organschaft), B05 USt-Organschaft exists, B07 foreign subsidiaries or permanent establishments, C04 open objections (Einsprüche) or lawsuits, C09 tax audit ordered or running, E01 loans from shareholders or related parties, E03 material rent, lease or leasing contracts, E05 real estate owned (Grundbesitz im Betriebsvermögen), E05b extended trade tax reduction (erweiterte Kürzung) claimed, E06 conversions or contributions (UmwStG) in the last 7 years, G02 tax-exempt sales (steuerfreie Ausgangsumsätze). Use unbekannt when the document raises the point but leaves it open; never answer nein just because the document is silent.",
      "items": [

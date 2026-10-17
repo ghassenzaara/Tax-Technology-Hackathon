@@ -12,11 +12,13 @@ from app.api.schemas import (
     DocumentProgress,
     ProgressResponse,
     ProjectView,
+    RecoveryView,
     RunView,
     UploadResponse,
 )
 from app.runs.manager import redact
 from app.runs.upload import IncomingFile, new_company, store_files
+from app.services.screen import SCREENABLE
 
 log = logging.getLogger("app.api")
 router = APIRouter(tags=["upload and progress"], responses=ERROR_RESPONSES)
@@ -124,9 +126,19 @@ async def progress(services: ServicesDep, company_id: str) -> ProgressResponse:
             project.last_error = redact(state.last_error, services.settings)
     run = runs[0] if runs else None
     documents = await services.repository.list_run_documents(run.run_id) if run else []
+    jobs = await services.repository.list_jobs(company_id)
+    active = next((j for j in jobs if j.status.active), None)
+    plan = await services.jobs.recovery(company_id)
+    screening = None
+    if state is not None and state.state in SCREENABLE:
+        screening = await services.repository.screening_status(company_id)
     return ProgressResponse(
         company_id=company_id,
         project=project,
         run=RunView.model_validate(run, from_attributes=True) if run else None,
         documents=[DocumentProgress.model_validate(d, from_attributes=True) for d in documents],
+        active_job=active.view() if active else None,
+        latest_job=jobs[0].view() if jobs else None,
+        recovery=RecoveryView(available=plan.available, action=plan.action, reason=plan.reason),
+        screening=screening,
     )

@@ -6,13 +6,14 @@ the confirmed draft, and step 9 reads its features from that confirmed draft (ro
 positions; Merkmal names and norm titles are unknown without the vocabulary tables).
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.config import Settings
 from app.db.repository import (
     WORKING_TABLES,
     BusyError,
     DuplicateLawError,
+    NotFoundError,
     PublishReport,
     Repository,
     RepositoryError,
@@ -20,6 +21,7 @@ from app.db.repository import (
     StateError,
     refused_publish,
 )
+from app.models.alert import SENDABLE, Alert, AlertStatus
 from app.models.audit import AuditEntry, AuditFilter, AuditKind
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import (
@@ -31,8 +33,16 @@ from app.models.features import (
     NormRef,
     ProfileSnapshot,
 )
+from app.models.job import Job, JobStatus
 from app.models.law import Law, LawSection
-from app.models.match import CompanyFeatures, Match
+from app.models.match import (
+    FINAL_INVALIDATIONS,
+    CompanyFeatures,
+    Match,
+    ScreeningChanges,
+    ScreeningStatus,
+)
+from app.models.outreach import EmailTemplate, Outreach, default_template
 from app.models.profile import FieldStatus, ProfileDraft
 from app.models.project import EMBEDDABLE, Confirmation, ProjectState, ProjectStatus
 from app.models.review import HintRow
@@ -58,7 +68,11 @@ NAME_COLUMNS = frozenset(
 
 
 class MemoryRepository(Repository):
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings or Settings(_env_file=None)
+        self.alerts: dict[int, Alert] = {}
+        self.outreach: dict[int, Outreach] = {}
+        self.template: EmailTemplate | None = None
         self.candidates: dict[tuple[str, str], list[Candidate]] = {}  # (company, doc) -> rows
         self.extractions: dict[tuple[str, str], DocumentExtraction] = {}
         self.drafts: dict[str, list[ProfileDraft]] = {}
@@ -72,10 +86,15 @@ class MemoryRepository(Repository):
         self.laws: dict[int, Law] = {}
         self.sections: dict[int, LawSection] = {}
         self.matches: dict[tuple[str, int], Match] = {}  # (company, law section) -> row
+        self.coverage: dict[tuple[str, int], tuple[bool, int, int]] = {}  # (company, law)
+        self.jobs: dict[str, Job] = {}
         self._next_id = 0
 
     async def initialize(self) -> None:
-        pass
+        if self.template is None:
+            self.template = default_template(self.settings, datetime.now(UTC))
+        for match in list(self.matches.values()):
+            self._sync_alert(match)
 
     async def replace_document_candidates(self, extraction: DocumentExtraction) -> None:
         key = (extraction.company_id, extraction.doc_id)
@@ -282,9 +301,6 @@ class MemoryRepository(Repository):
         self.drafts.pop(company_id, None)
         for key in [k for k, d in self.run_documents.items() if d.company_id == company_id]:
             del self.run_documents[key]
-        for run in self.runs.values():
-            if run.company_id == company_id:
-                run.folder = None
         return counts
 
     async def count_working_rows(self, company_id: str) -> dict[str, int]:
@@ -345,10 +361,14 @@ class MemoryRepository(Repository):
 
     async def mark_cleaned(self, company_id: str) -> None:
         state = self.states.get(company_id)
-        if state is None or state.state is not ProjectState.EMBEDDED:
+        if state is None or state.state not in (ProjectState.EMBEDDED, ProjectState.CLEANED):
             raise StateError(f"project '{company_id}' is not embedded: cannot mark cleaned")
-        state.state = ProjectState.CLEANED
-        state.cleaned_at = datetime.now(UTC)
+        for run in self.runs.values():
+            if run.company_id == company_id:
+                run.folder = None
+        if state.state is ProjectState.EMBEDDED:
+            state.state = ProjectState.CLEANED
+            state.cleaned_at = datetime.now(UTC)
         state.last_error = None
 
     # Steps 11 to 15: laws and screening -------------------------------------------------
@@ -369,9 +389,17 @@ class MemoryRepository(Repository):
         if old is not None and not replace:
             raise DuplicateLawError(f"law '{old.title}' (id {old.id}) is already stored")
         if old is not None:  # cascade, like the foreign keys
+            for alert in self.alerts.values():
+                if alert.law.id == old.id:
+                    alert.match_id = None
+                    alert.match.is_current = False
+                    if alert.status in SENDABLE:
+                        alert.status = AlertStatus.OBSOLETE
+                        alert.status_changed_at = datetime.now(UTC)
             del self.laws[old.id]
             self.sections = {k: v for k, v in self.sections.items() if v.law_id != old.id}
             self.matches = {k: v for k, v in self.matches.items() if v.law_id != old.id}
+            self.coverage = {k: v for k, v in self.coverage.items() if k[1] != old.id}
         law_id = self._new_id()
         self.laws[law_id] = law.model_copy(
             update={"id": law_id, "ingested_at": datetime.now(UTC)}, deep=True
@@ -413,7 +441,14 @@ class MemoryRepository(Repository):
             features=[r.model_copy(deep=True) for r in self.embeddings.get(company_id, [])],
         )
 
-    async def list_matches(self, company_id: str, only_hits: bool = False) -> list[Match]:
+    async def list_matches(
+        self,
+        company_id: str,
+        only_hits: bool = False,
+        *,
+        law_id: int | None = None,
+        include_history: bool = False,
+    ) -> list[Match]:
         rows = [
             m.model_copy(
                 update={
@@ -423,11 +458,16 @@ class MemoryRepository(Repository):
                 deep=True,
             )
             for (company, _), m in self.matches.items()
-            if company == company_id and (m.judge_relevant or not only_hits)
+            if company == company_id
+            and (m.judge_relevant or not only_hits)
+            and (law_id is None or m.law_id == law_id)
+            and (m.is_current or include_history)
         ]
         return sorted(rows, key=lambda m: (not m.judge_relevant, -m.score, m.law_section_id))
 
     async def save_matches(self, matches: list[Match]) -> None:
+        if any(m.law_id not in self.laws or m.law_section_id not in self.sections for m in matches):
+            raise RepositoryError("match references an unknown law or section")
         for m in matches:
             key = (m.company_id, m.law_section_id)
             old = self.matches.get(key)
@@ -439,6 +479,208 @@ class MemoryRepository(Repository):
                 },
                 deep=True,
             )
+            self._sync_alert(self.matches[key])
+
+    async def apply_screening(self, changes: ScreeningChanges) -> None:
+        cid, scope = changes.company_id, set(changes.law_ids)
+        if any(m.law_id not in scope or m.company_id != cid for m in changes.judged):
+            raise RepositoryError("judged match outside the screening scope")
+        await self.save_matches(changes.judged)
+        for section_id in changes.reused:
+            match = self.matches[(cid, section_id)]
+            match.is_current, match.invalidation_reason = True, None
+            match.profile_version = changes.profile_version
+            self._sync_alert(match)
+        for section_id, reason in changes.invalidated.items():
+            match = self.matches.get((cid, section_id))
+            if match is None:
+                continue
+            match.is_current, match.invalidation_reason = False, reason
+            self._sync_alert(match)
+        for law_id, (deferred, unjudged) in changes.coverage.items():
+            self.coverage[(cid, law_id)] = (not (deferred or unjudged), deferred, unjudged)
+        await self.mark_screened(changes.screened_entries)
+
+    async def screening_status(self, company_id: str) -> ScreeningStatus:
+        covered = {law for (cid, law) in self.coverage if cid == company_id}
+        return ScreeningStatus(
+            pending_changes=len(await self.pending_profile_changes(company_id)),
+            incomplete_laws=[
+                law
+                for (cid, law), (complete, _, _) in sorted(self.coverage.items())
+                if cid == company_id and not complete
+            ],
+            unscreened_laws=[law for law in sorted(self.laws) if law not in covered],
+            stale_decisions=sum(
+                1
+                for (cid, _), m in self.matches.items()
+                if cid == company_id
+                and not m.is_current
+                and m.invalidation_reason not in FINAL_INVALIDATIONS
+            ),
+        )
+
+    def _sync_alert(self, match: Match) -> None:
+        """Same transitions as the Postgres alert sync (see postgres._sync_alert)."""
+        old = next((a for a in self.alerts.values() if a.match_id == match.id), None)
+        now = datetime.now(UTC)
+        if old is None and not (match.judge_relevant and match.is_current):
+            return
+        section = self.sections[match.law_section_id]
+        status = old.status if old else AlertStatus.NEW
+        if match.is_current:
+            if match.judge_relevant and status == AlertStatus.OBSOLETE:
+                status = AlertStatus.NEW
+            elif not match.judge_relevant and status in SENDABLE:
+                status = AlertStatus.OBSOLETE
+        elif match.invalidation_reason in FINAL_INVALIDATIONS and status in SENDABLE:
+            status = AlertStatus.OBSOLETE
+        alert = Alert(
+            id=old.id if old else self._new_id(),
+            match_id=match.id,
+            company_id=match.company_id,
+            status=status,
+            dismissed_reason=old.dismissed_reason if old else None,
+            created_at=old.created_at if old else now,
+            status_changed_at=(old.status_changed_at if old and status == old.status else now),
+            match=match.model_copy(deep=True),
+            law=self.laws[match.law_id].model_copy(deep=True),
+            section_ref=section.section_ref,
+            section_text=section.text,
+            page_from=section.page_from,
+            page_to=section.page_to,
+        )
+        self.alerts[alert.id] = alert
+
+    async def get_contact_email(self, company_id: str) -> str | None:
+        draft = self.published.get(company_id)
+        if draft and "ansprechpartner_email" in draft.schema_fields:
+            return draft.field("ansprechpartner_email").chosen
+        return None
+
+    async def list_alerts(self, company_id=None, law_id=None) -> list[Alert]:
+        return [
+            await self.get_alert(a.id)
+            for a in self.alerts.values()
+            if (company_id is None or a.company_id == company_id)
+            and (law_id is None or a.law.id == law_id)
+        ]
+
+    async def get_alert(self, alert_id: int) -> Alert:
+        if alert_id not in self.alerts:
+            raise NotFoundError(f"no alert with id {alert_id}")
+        result = self.alerts[alert_id].model_copy(deep=True)
+        live = next((m for m in self.matches.values() if m.id == result.match_id), None)
+        if live is not None:  # its freshness decides whether the alert may be sent
+            result.match = live.model_copy(deep=True)
+        if result.law.id in self.laws:
+            result.law = self.laws[result.law.id].model_copy(deep=True)
+        result.recipient_available = bool(await self.get_contact_email(result.company_id))
+        result.outreach = await self.list_outreach(alert_id=alert_id)
+        return result
+
+    async def change_alert_status(self, alert_id, status, reason=None) -> Alert:
+        alert = await self.get_alert(alert_id)
+        allowed = (
+            {AlertStatus.NEW}
+            if status == AlertStatus.SEEN
+            else SENDABLE
+            if status == AlertStatus.DISMISSED
+            else set()
+        )
+        if alert.status not in allowed:
+            raise StateError(f"alert {alert_id} is {alert.status}; cannot set {status}")
+        if any(o.status == "pending" for o in alert.outreach):
+            raise StateError(f"alert {alert_id} has a pending send")
+        row = self.alerts[alert_id]
+        row.status, row.status_changed_at = status, datetime.now(UTC)
+        row.dismissed_reason = reason if status == AlertStatus.DISMISSED else None
+        return await self.get_alert(alert_id)
+
+    async def get_template(self) -> EmailTemplate:
+        if self.template is None:
+            self.template = default_template(self.settings, datetime.now(UTC))
+        return self.template.model_copy(deep=True)
+
+    async def edit_template(self, subject: str, body: str) -> EmailTemplate:
+        old = await self.get_template()
+        self.template = EmailTemplate(
+            subject=subject,
+            body=body,
+            updated_at=max(datetime.now(UTC), old.updated_at + timedelta(microseconds=1)),
+        )
+        self.audit.append(
+            AuditEntry(
+                id=len(self.audit) + 1,
+                kind=AuditKind.TEMPLATE_EDITED,
+                acted_by=self.settings.advisor_label,
+                acted_at=datetime.now(UTC),
+                old_value={"subject": old.subject, "body": old.body},
+                new_value={"subject": subject, "body": body},
+            )
+        )
+        return await self.get_template()
+
+    async def reserve_outreach(self, request, delivered_to, delivery_subject) -> Outreach:
+        from app.services.alerts import require_sendable
+
+        alert = await self.get_alert(request.alert_id)
+        require_sendable(
+            alert,
+            alert.outreach,
+            await self.get_project_state(alert.company_id),
+            await self.company_busy(alert.company_id, self.settings.step_lock_timeout_s),
+        )
+        template = await self.get_template()
+        row = Outreach(
+            id=self._new_id(),
+            alert_id=alert.id,
+            company_id=alert.company_id,
+            recipient=request.recipient,
+            delivered_to=delivered_to,
+            subject=request.subject,
+            delivery_subject=delivery_subject,
+            sent_body=request.body,
+            created_at=datetime.now(UTC),
+            template_updated_at=request.template_updated_at or template.updated_at,
+        )
+        self.outreach[row.id] = row
+        return row.model_copy(deep=True)
+
+    async def finish_outreach(
+        self, outreach_id, status, *, message_id=None, error=None
+    ) -> Outreach:
+        row = self.outreach.get(outreach_id)
+        if row is None:
+            raise NotFoundError(f"no outreach with id {outreach_id}")
+        if row.status != "pending" or status not in {"sent", "failed"}:
+            raise StateError(f"outreach {outreach_id} is {row.status}; cannot set {status}")
+        row.status, row.error = status, error
+        if status == "sent":
+            row.sent_at, row.provider_message_id = datetime.now(UTC), message_id
+            alert = self.alerts[row.alert_id]
+            alert.status, alert.status_changed_at = AlertStatus.ACTIONED, row.sent_at
+            self.audit.append(
+                AuditEntry(
+                    id=len(self.audit) + 1,
+                    kind=AuditKind.EMAIL_SENT,
+                    company_id=row.company_id,
+                    acted_by=self.settings.advisor_label,
+                    acted_at=row.sent_at,
+                    outreach_id=row.id,
+                )
+            )
+        return row.model_copy(deep=True)
+
+    async def list_outreach(self, company_id=None, alert_id=None) -> list[Outreach]:
+        return [
+            o.model_copy(deep=True)
+            for o in sorted(
+                self.outreach.values(), key=lambda o: (o.created_at, o.id), reverse=True
+            )
+            if (company_id is None or o.company_id == company_id)
+            and (alert_id is None or o.alert_id == alert_id)
+        ]
 
     async def pending_profile_changes(self, company_id: str) -> list[int]:
         return [
@@ -453,6 +695,65 @@ class MemoryRepository(Repository):
         for e in self.audit:
             if e.id in entry_ids and e.screened_at is None:
                 e.screened_at = datetime.now(UTC)
+
+    # Background jobs -------------------------------------------------------------------
+
+    async def create_job(self, job: Job) -> Job:
+        active = next(
+            (j for j in self.jobs.values() if j.dedupe_key == job.dedupe_key and j.status.active),
+            None,
+        )
+        if active is not None:
+            raise BusyError(f"job {active.id} ({active.operation}) is already active; wait for it")
+        self.jobs[job.id] = job.model_copy(deep=True)
+        return job.model_copy(deep=True)
+
+    async def save_job(self, job: Job) -> None:
+        if job.id not in self.jobs:
+            raise NotFoundError(f"no job with id {job.id}")
+        self.jobs[job.id] = job.model_copy(deep=True)
+
+    async def get_job(self, job_id: str) -> Job | None:
+        job = self.jobs.get(job_id)
+        return job.model_copy(deep=True) if job else None
+
+    async def list_jobs(
+        self, company_id: str | None = None, *, retry_of: str | None = None
+    ) -> list[Job]:
+        jobs = [
+            j
+            for j in self.jobs.values()
+            if (company_id is None or j.company_id == company_id)
+            and (retry_of is None or j.retry_of == retry_of)
+        ]
+        newest = sorted(jobs, key=lambda j: (j.created_at, j.id), reverse=True)
+        return [j.model_copy(deep=True) for j in newest]
+
+    async def interrupt_active_jobs(self, error: str) -> int:
+        active = [j for j in self.jobs.values() if j.status.active]
+        for job in active:
+            job.status, job.error = JobStatus.INTERRUPTED, error
+            job.finished_at = datetime.now(UTC)
+        return len(active)
+
+    async def clear_step_markers(self) -> int:
+        marked = [s for s in self.states.values() if s.running_step]
+        for state in marked:
+            state.running_step = state.running_since = None
+        return len(marked)
+
+    async def company_busy(self, company_id: str, timeout_s: float) -> str | None:
+        job = next(
+            (j for j in self.jobs.values() if j.company_id == company_id and j.status.active),
+            None,
+        )
+        if job is not None:
+            return f"job {job.id} ({job.operation}) is {job.status}"
+        state = self.states.get(company_id)
+        running = state and state.running_step and state.running_since
+        if running and (datetime.now(UTC) - state.running_since).total_seconds() < timeout_s:
+            return f"{state.running_step} is running"
+        return None
 
 
 def _conflicts(draft: ProfileDraft) -> dict[str, bool]:

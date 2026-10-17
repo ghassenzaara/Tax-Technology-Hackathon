@@ -86,6 +86,18 @@ async def target_company(conn: AsyncConnection, company_id: str) -> int | None:
     return row[0] if row else None
 
 
+async def finding_norm_codes(conn: AsyncConnection, deal_id: int) -> dict[int, list[str]]:
+    """Finding id -> its sorted norm codes (`profil.finding_norm`), the same association
+    the snapshot's `_FINDINGS` aggregates; findings without norms are missing."""
+    cur = await conn.execute(
+        "SELECT fn.finding_id, array_agg(fn.norm_code ORDER BY fn.norm_code) "
+        "FROM profil.finding_norm fn JOIN profil.finding f ON f.id = fn.finding_id "
+        "WHERE f.deal_id = %s GROUP BY fn.finding_id",
+        (deal_id,),
+    )
+    return {row[0]: list(row[1]) for row in await cur.fetchall()}
+
+
 async def load_snapshot(conn: AsyncConnection, company_id: str) -> ProfileSnapshot:
     async with conn.cursor(row_factory=dict_row) as cur:
         await cur.execute(

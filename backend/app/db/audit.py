@@ -28,6 +28,7 @@ _COLUMNS = (
     "reason",
     "profile_version",
     "outreach_id",
+    "screened_at",  # set at insert only for changes matching never needs (contact address)
 )
 _JSON = frozenset({"row_key", "old_value", "new_value"})
 

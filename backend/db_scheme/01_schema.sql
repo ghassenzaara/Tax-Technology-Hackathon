@@ -110,6 +110,7 @@ CREATE TABLE gesellschaft (                       -- A04–A07 + Profil-Metadate
     ist_zielgesellschaft     boolean NOT NULL DEFAULT false,
     verantwortlicher_stb     text,               -- M (Profil)
     ansprechpartner_mandant  text,               -- M (Profil)
+    ansprechpartner_email   text,               -- M: client contact only, nullable
     profil_version           int NOT NULL DEFAULT 1,
     letzter_refresh          date,
     quelle_dok int REFERENCES dokument(id), fundstelle text, stand date, konfidenz konfidenz,

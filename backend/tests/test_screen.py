@@ -148,7 +148,8 @@ def test_max_not_average_and_best_three(settings):
     assert [s.feature.objekt_id for s in scored.features] == [1, 4, 2]
 
 
-def test_threshold_cap_across_laws_and_norm_tie_break(settings):
+def test_threshold_across_laws_and_norm_tie_break(settings):
+    """The cap no longer limits stage 2: it is the judge budget per execution (below)."""
     settings = settings.model_copy(update={"match_score_threshold": 0.6, "match_max_candidates": 2})
     scores = [0.5, 0.6, 0.8, 0.8]
     sections = [section(settings, n, [s, math.sqrt(1 - s * s)]) for n, s in enumerate(scores, 1)]
@@ -157,7 +158,7 @@ def test_threshold_cap_across_laws_and_norm_tie_break(settings):
     pairs = [Pair(feature(settings), s, s.nr == 4) for s in sections]
     ranked = rank_sections(pairs, laws, {2}, settings)
     assert [s.section.nr for s in ranked] == [4, 3, 2, 1]
-    assert [s.passed for s in ranked] == [True, True, False, False]
+    assert [s.passed for s in ranked] == [True, True, True, False]
     assert ranked[0].form_unknown
     # Norm overlap alone cannot lift a section below the threshold.
     (below,) = rank_sections([Pair(feature(settings), sections[0], True)], laws, set(), settings)
@@ -292,6 +293,8 @@ def test_judge_input_uses_sentence_metadata_and_law_only(candidate):
 
 
 async def test_rerun_changed_sentence_removed_feature_and_force(settings, project):
+    # One feature per section, so a changed sentence changes one section's judge inputs.
+    settings = settings.model_copy(update={"judge_features_per_section": 1})
     repo = await ready(
         settings,
         project,
@@ -496,7 +499,12 @@ async def test_seeded_nordhafen_screening_postgres(
         assert client.completions.calls == calls
     finally:
         async with await psycopg.AsyncConnection.connect(os.environ["TEST_DATABASE_URL"]) as conn:
-            if law_id is not None:
+            if law_id is not None:  # the seed project keeps no alert of this test law
+                await conn.execute(
+                    "DELETE FROM screening.alert WHERE company_id = %s "
+                    "AND (source_snapshot->'law'->>'id')::bigint = %s",
+                    (project, law_id),
+                )
                 await conn.execute("DELETE FROM screening.law WHERE id = %s", (law_id,))
             await conn.execute("DELETE FROM profil.embedding WHERE modell = %s", (model,))
             await conn.execute(

@@ -16,11 +16,14 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from app.config import Settings
+from app.models.alert import Alert, AlertStatus
 from app.models.audit import AuditEntry, AuditFilter
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import EmbeddingRecord, ProfileSnapshot
+from app.models.job import Job
 from app.models.law import Law, LawSection
-from app.models.match import CompanyFeatures, Match
+from app.models.match import CompanyFeatures, Match, ScreeningChanges, ScreeningStatus
+from app.models.outreach import EmailTemplate, Outreach, SendRequest
 from app.models.profile import ProfileDraft
 from app.models.project import Confirmation, ProjectStatus
 from app.models.review import HintRow
@@ -71,6 +74,22 @@ class DuplicateLawError(RepositoryError):
     """A law with the same file content is already stored (use --replace)."""
 
 
+class OutreachConflict(StateError):
+    """A send attempt of the alert exists already; carries its outreach id."""
+
+    def __init__(self, message: str, outreach_id: int):
+        super().__init__(message)
+        self.outreach_id = outreach_id
+
+
+class SendPendingError(OutreachConflict):
+    """An earlier send is pending (acceptance unknown): resolve it deliberately first."""
+
+
+class AlreadySentError(OutreachConflict):
+    """The alert's email was sent already."""
+
+
 class PublishReport(BaseModel):
     project: str
     rows: dict[str, int] = {}  # table -> rows written
@@ -80,6 +99,51 @@ class PublishReport(BaseModel):
 
 
 class Repository(ABC):
+    # Steps 16 to 18. Mutations below include their audit entries in the same transaction.
+    @abstractmethod
+    async def get_contact_email(self, company_id: str) -> str | None: ...
+
+    @abstractmethod
+    async def list_alerts(
+        self, company_id: str | None = None, law_id: int | None = None
+    ) -> list[Alert]: ...
+
+    @abstractmethod
+    async def get_alert(self, alert_id: int) -> Alert: ...
+
+    @abstractmethod
+    async def change_alert_status(
+        self, alert_id: int, status: AlertStatus, reason: str | None = None
+    ) -> Alert: ...
+
+    @abstractmethod
+    async def get_template(self) -> EmailTemplate: ...
+
+    @abstractmethod
+    async def edit_template(self, subject: str, body: str) -> EmailTemplate: ...
+
+    @abstractmethod
+    async def reserve_outreach(
+        self, request: SendRequest, delivered_to: str, delivery_subject: str
+    ) -> Outreach:
+        """Lock/check the alert and insert pending; commit before the provider call."""
+
+    @abstractmethod
+    async def finish_outreach(
+        self,
+        outreach_id: int,
+        status: str,
+        *,
+        message_id: str | None = None,
+        error: str | None = None,
+    ) -> Outreach:
+        """Pending to sent (with alert and audit) or failed, atomically."""
+
+    @abstractmethod
+    async def list_outreach(
+        self, company_id: str | None = None, alert_id: int | None = None
+    ) -> list[Outreach]: ...
+
     @abstractmethod
     async def initialize(self) -> None:
         """Create the pipeline tables if they do not exist."""
@@ -203,8 +267,9 @@ class Repository(ABC):
 
     @abstractmethod
     async def delete_working_data(self, company_id: str) -> dict[str, int]:
-        """Step 10: delete the company's rows in the pipeline working tables and clear the
-        upload folder of its runs (one transaction). Returns rows deleted per table."""
+        """Step 10: delete the company's rows in the pipeline working tables (one
+        transaction). The runs keep their upload folder until `mark_cleaned`, so a failed
+        file deletion can be retried. Returns rows deleted per table."""
 
     @abstractmethod
     async def count_working_rows(self, company_id: str) -> dict[str, int]:
@@ -212,7 +277,9 @@ class Repository(ABC):
 
     @abstractmethod
     async def mark_cleaned(self, company_id: str) -> None:
-        """Move the project from embedded to cleaned (StateError otherwise)."""
+        """After verified deletion: clear the upload folder of the company's runs and move
+        the project from embedded to cleaned, in one transaction (StateError otherwise). On
+        a cleaned project it only clears the folders (leftover files were removed)."""
 
     # Step 0: runs of the upload layer -----------------------------------------------------
 
@@ -283,12 +350,61 @@ class Repository(ABC):
         """The company's feature vectors (every model) and its legal form. Read-only."""
 
     @abstractmethod
-    async def list_matches(self, company_id: str, only_hits: bool = False) -> list[Match]:
-        """Stored matches, hits first, then by score."""
+    async def list_matches(
+        self,
+        company_id: str,
+        only_hits: bool = False,
+        *,
+        law_id: int | None = None,
+        include_history: bool = False,
+    ) -> list[Match]:
+        """Stored matches, hits first, then by score. Current decisions only unless
+        `include_history` (invalidated decisions keep their historical verdict)."""
 
     @abstractmethod
     async def save_matches(self, matches: list[Match]) -> None:
-        """Insert or replace matches (key: company and law section) in one transaction."""
+        """Insert or replace matches (key: company and law section) with their alerts in one
+        transaction."""
+
+    @abstractmethod
+    async def apply_screening(self, changes: ScreeningChanges) -> None:
+        """One screening execution in one transaction: store new verdicts, make reused ones
+        current, invalidate the others (final reasons obsolete new/seen alerts; dismissed
+        and actioned stay), store coverage per law and mark the audit entries screened."""
+
+    @abstractmethod
+    async def screening_status(self, company_id: str) -> ScreeningStatus: ...
+
+    # Background jobs of the HTTP API ---------------------------------------------------
+
+    @abstractmethod
+    async def create_job(self, job: Job) -> Job:
+        """Insert a queued job; BusyError when an active job has the same dedupe key."""
+
+    @abstractmethod
+    async def save_job(self, job: Job) -> None:
+        """Update status, result, error and timestamps."""
+
+    @abstractmethod
+    async def get_job(self, job_id: str) -> Job | None: ...
+
+    @abstractmethod
+    async def list_jobs(
+        self, company_id: str | None = None, *, retry_of: str | None = None
+    ) -> list[Job]:
+        """Jobs, newest first."""
+
+    @abstractmethod
+    async def interrupt_active_jobs(self, error: str) -> int:
+        """Mark queued or running jobs interrupted (server start). Returns the count."""
+
+    @abstractmethod
+    async def clear_step_markers(self) -> int:
+        """Server start (single server): no step can be running, clear every busy marker."""
+
+    @abstractmethod
+    async def company_busy(self, company_id: str, timeout_s: float) -> str | None:
+        """What blocks company work right now (an active job or a fresh step marker)."""
 
     @abstractmethod
     async def pending_profile_changes(self, company_id: str) -> list[int]:
@@ -324,7 +440,7 @@ def make_repository(settings: Settings) -> Repository:
             raise RepositoryError("REPOSITORY=postgres needs DATABASE_URL")
         from app.db.postgres import PostgresRepository  # driver import stays optional
 
-        return PostgresRepository(settings.database_url.get_secret_value())
+        return PostgresRepository(settings.database_url.get_secret_value(), settings=settings)
     from app.db.memory import MemoryRepository
 
-    return MemoryRepository()
+    return MemoryRepository(settings=settings)

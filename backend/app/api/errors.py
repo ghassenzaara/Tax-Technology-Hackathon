@@ -13,17 +13,23 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException
 
 from app.db.repository import (
+    AlreadySentError,
     BusyError,
+    DuplicateLawError,
     NotFoundError,
     PublishError,
     RepositoryError,
     RunActiveError,
+    SendPendingError,
     StaleDraftError,
     StaleProfileError,
     StateError,
     UnsupportedError,
 )
+from app.mail.provider import MailConfigError, MailError
 from app.profile.review import DecisionError
+from app.runs.jobs import LLMUnavailableError
+from app.services.email import SendFailed, SendUncertain
 
 log = logging.getLogger("app.api")
 
@@ -37,8 +43,14 @@ class ErrorCode(StrEnum):
     WRONG_STATE = "wrong_state"  # 409: the project state does not allow the call
     STALE_DRAFT = "stale_draft"  # 409: the draft changed; reload the draft
     STALE_PROFILE = "stale_profile"  # 409: the profile version changed; reload the profile
-    BUSY = "busy"  # 409: confirm, embedding or cleanup of the company is running; retry
+    BUSY = "busy"  # 409: a step or background job of the company (or this law) is active
     RUN_ACTIVE = "run_active"  # 409: a run of the company is queued or running
+    DUPLICATE = "duplicate"  # 409: the same legal source is stored already (use replace)
+    SEND_PENDING = "send_pending"  # 409: an earlier send is unresolved (see outreach_id)
+    ALREADY_SENT = "already_sent"  # 409: the alert's email was sent (see outreach_id)
+    SEND_FAILED = "send_failed"  # 502: the mail provider rejected it; a new send may follow
+    MAIL_UNAVAILABLE = "mail_unavailable"  # 503: mail provider not configured
+    LLM_UNAVAILABLE = "llm_unavailable"  # 503: the server has no OPENAI_API_KEY
     PUBLISH_FAILED = "publish_failed"  # 422: the profile could not be written (details in text)
     NOT_SUPPORTED = "not_supported"  # 501: the configured database cannot do this
     DATABASE_UNAVAILABLE = "database_unavailable"  # 503
@@ -57,6 +69,7 @@ class ErrorBody(BaseModel):
     message: str
     details: list[ErrorDetail] = []
     error_id: str | None = None  # server errors: the id in the server log
+    outreach_id: int | None = None  # email errors: the durable send attempt
 
 
 class ApiError(Exception):
@@ -78,6 +91,9 @@ class UploadTooLarge(Exception):
 # Most specific first: StaleDraftError and the others are RepositoryError subclasses.
 REPOSITORY_ERRORS: list[tuple[type[RepositoryError], int, ErrorCode]] = [
     (NotFoundError, 404, ErrorCode.NOT_FOUND),
+    (SendPendingError, 409, ErrorCode.SEND_PENDING),
+    (AlreadySentError, 409, ErrorCode.ALREADY_SENT),
+    (DuplicateLawError, 409, ErrorCode.DUPLICATE),
     (StaleDraftError, 409, ErrorCode.STALE_DRAFT),
     (StaleProfileError, 409, ErrorCode.STALE_PROFILE),
     (BusyError, 409, ErrorCode.BUSY),
@@ -93,11 +109,17 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     for status, text in (
         (400, "bad_request, empty_upload"),
         (404, "not_found"),
-        (409, "wrong_state, stale_draft, stale_profile, busy, run_active"),
+        (
+            409,
+            "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, "
+            "send_pending, already_sent",
+        ),
         (413, "upload_too_large"),
         (422, "validation (details per field), publish_failed"),
         (500, "internal_error (with error_id)"),
         (501, "not_supported"),
+        (502, "send_failed (with outreach_id)"),
+        (503, "database_unavailable, mail_unavailable, llm_unavailable"),
     )
 }
 
@@ -108,13 +130,16 @@ def error_response(
     message: str,
     details: list[ErrorDetail] | None = None,
     error_id: str | None = None,
+    outreach_id: int | None = None,
 ) -> JSONResponse:
-    body = ErrorBody(code=code, message=message, details=details or [], error_id=error_id)
+    body = ErrorBody(
+        code=code,
+        message=message,
+        details=details or [],
+        error_id=error_id,
+        outreach_id=outreach_id,
+    )
     return JSONResponse(body.model_dump(mode="json"), status_code=status)
-
-
-def _request_id(request: Request) -> str | None:
-    return getattr(request.state, "request_id", None)
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -133,8 +158,25 @@ def install_error_handlers(app: FastAPI) -> None:
     async def repository_error(request: Request, exc: RepositoryError) -> JSONResponse:
         for cls, status, code in REPOSITORY_ERRORS:
             if isinstance(exc, cls):
-                return error_response(status, code, str(exc))
-        return _internal(request, exc)
+                outreach_id = getattr(exc, "outreach_id", None)
+                return error_response(status, code, str(exc), outreach_id=outreach_id)
+        return internal_error(request.scope, exc)
+
+    @app.exception_handler(MailError)  # typed: never parsed from the message text
+    async def mail_error(request: Request, exc: MailError) -> JSONResponse:
+        if isinstance(exc, SendUncertain):
+            return error_response(
+                409, ErrorCode.SEND_PENDING, str(exc), outreach_id=exc.outreach_id
+            )
+        if isinstance(exc, SendFailed):
+            return error_response(502, ErrorCode.SEND_FAILED, str(exc), outreach_id=exc.outreach_id)
+        if isinstance(exc, MailConfigError):
+            return error_response(503, ErrorCode.MAIL_UNAVAILABLE, str(exc))
+        return error_response(502, ErrorCode.SEND_FAILED, "mail provider error")
+
+    @app.exception_handler(LLMUnavailableError)
+    async def llm_unavailable(request: Request, exc: LLMUnavailableError) -> JSONResponse:
+        return error_response(503, ErrorCode.LLM_UNAVAILABLE, str(exc))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -160,13 +202,13 @@ def install_error_handlers(app: FastAPI) -> None:
         message = exc.detail if isinstance(exc.detail, str) else code.value
         return error_response(exc.status_code, code, message)
 
-    @app.exception_handler(Exception)
-    async def unexpected(request: Request, exc: Exception) -> JSONResponse:
-        return _internal(request, exc)
+    # Unexpected exceptions are answered by the RequestGuard middleware (inside CORS and
+    # the request context), not by a handler here: Starlette would run that handler
+    # outside every middleware, without CORS, request id or no-store headers.
 
 
-def _internal(request: Request, exc: Exception) -> JSONResponse:
-    error_id = _request_id(request)
+def internal_error(scope, exc: Exception) -> JSONResponse:
+    error_id = scope.get("state", {}).get("request_id")
     log.error("error_id=%s %s: %s", error_id, type(exc).__name__, exc, exc_info=exc)
     return error_response(
         500,

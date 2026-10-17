@@ -35,6 +35,13 @@ Getestet mit PostgreSQL 16.
 
 ## Mapping Feld-ID → Tabelle
 
+Block M now includes nullable `gesellschaft.ansprechpartner_email`, next to
+`ansprechpartner_mandant`: the client's contact address, never an advisor firm's address.
+Existing databases receive it through `app/db/migrations/007_contact_email.sql`; resets
+retain it through `01_schema.sql`. TODO for the schema/fixture teammates: add an explicitly
+stated client address to a fixture and seed if desired. Nordhafen currently has no client
+address; `kanzlei@ro-stb.example` belongs to the advisor and must not populate this field.
+
 | Feld | Bedeutung | Tabelle / Spalte |
 |---|---|---|
 | A01 | Deal-Typ, Signing, Closing | `deal.deal_typ, signing_am, closing_am` |

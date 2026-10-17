@@ -16,7 +16,11 @@ Usage:
   uv run python -m app.cli --laws
   uv run python -m app.cli --screen [--company-id P] [--law-id N] [--dry-run] [--force]
   uv run python -m app.cli --screen-pending --company-id PROJECT
-  uv run python -m app.cli --matches --company-id PROJECT [--only-hits] [--json out.json]
+  uv run python -m app.cli --matches --company-id PROJECT [--only-hits] [--history] [--json F]
+  uv run python -m app.cli --alerts [--company-id PROJECT] [--status all]
+  uv run python -m app.cli --email-preview ID
+  uv run python -m app.cli --email-send ID --recipient ADDRESS [--body-file FILE] --yes
+  uv run python -m app.cli --outreach-resolve ID --as sent|failed
 
 The company id is the deal's project name (profil.deal.projektname). --publish writes the
 draft into schema profil as unconfirmed rows, replacing an earlier publish of that project
@@ -66,17 +70,22 @@ from app.db.repository import (
 from app.ingest.pipeline import DocumentParser, RunSummary, summarize
 from app.llm import make_client
 from app.logging_setup import configure_logging
+from app.mail.provider import MailError
 from app.matching.score import MatchError
+from app.models.alert import AlertStatus
 from app.models.audit import AuditEntry, AuditFilter, AuditKind
 from app.models.document import DocStatus, Document
 from app.models.extraction import DocumentExtraction
 from app.models.law import IngestReport, Law
 from app.models.match import Match, ScreenReport
+from app.models.outreach import SendRequest
 from app.models.profile import FieldResult, FieldStatus, ProfileDraft
 from app.models.review import ConfirmRequest, ConfirmResult, ReviewView
 from app.models.update import ConfirmedProfile, UpdateRequest, UpdateResult
 from app.profile.review import DecisionError
 from app.profile.schema import ProfileSchema, SchemaError, load_profile_schema
+from app.services import alerts as alert_service
+from app.services import email as email_service
 from app.services.cleanup import CleanupError, cleanup_project
 from app.services.confirm import confirm_profile, review_profile
 from app.services.embed import Embedder, EmbedError
@@ -99,6 +108,19 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings().model_copy(update=updates)
 
     db_setup = args.init_db or args.seed or args.reset_profil
+    outreach_chosen = [c for c in OUTREACH_COMMANDS if getattr(args, c)]
+    if outreach_chosen:
+        other = any(getattr(args, c) for c in SCREEN_COMMANDS + STEP_COMMANDS)
+        if (
+            len(outreach_chosen) != 1
+            or other
+            or db_setup
+            or args.folder
+            or args.extract
+            or args.merge_only
+        ):
+            return _fail("choose one command at a time")
+        return _run_outreach(outreach_chosen[0], args, settings)
     if any(getattr(args, command) for command in SCREEN_COMMANDS):
         return _run_screening(args, settings)
     if any(getattr(args, command) for command in STEP_COMMANDS):
@@ -390,12 +412,118 @@ async def _screening(
             case "screen_pending":
                 _print_screen([await screener.screen_pending(args.company_id)])
             case "matches":
-                matches = await repository.list_matches(args.company_id, args.only_hits)
+                matches = await repository.list_matches(
+                    args.company_id, args.only_hits, include_history=args.history
+                )
                 _print_matches(args.company_id, matches)
                 _write_json(args.json, {"matches": [m.model_dump(mode="json") for m in matches]})
         return 0
     except (RepositoryError, IngestError, ScreenError, MatchError) as exc:
         print(f"\nerror: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await repository.close()
+
+
+OUTREACH_COMMANDS = (
+    "alerts",
+    "alert_show",
+    "alert_seen",
+    "alert_dismiss",
+    "template_show",
+    "template_edit",
+    "email_preview",
+    "email_send",
+    "outreach",
+    "outreach_resolve",
+)
+
+
+def _run_outreach(command: str, args: argparse.Namespace, settings: Settings) -> int:
+    if settings.repository != "postgres":
+        return _fail(f"--{command.replace('_', '-')} needs --repository postgres")
+    if args.email_send and not args.yes:
+        return _fail("--email-send needs explicit confirmation with --yes")
+    if args.outreach_resolve and not args.resolve_as:
+        return _fail("--outreach-resolve needs --as sent|failed after checking Gmail Sent")
+    if args.email_send and not args.recipient:
+        return _fail("--email-send needs --recipient")
+    try:
+        repository = make_repository(settings)
+    except RepositoryError as exc:
+        return _fail(str(exc))
+    factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
+    return asyncio.run(_outreach(command, args, settings, repository), loop_factory=factory)
+
+
+def _read_mail_file(path: str) -> str:
+    with Path(path).open(encoding="utf-8-sig", newline="") as source:
+        return source.read()
+
+
+async def _outreach(command, args, settings, repository) -> int:
+    try:
+        await repository.initialize()
+        match command:
+            case "alerts":
+                statuses = (
+                    None
+                    if args.status is None
+                    else (list(AlertStatus) if args.status == "all" else [AlertStatus(args.status)])
+                )
+                result = await alert_service.list_alerts(
+                    repository, statuses, args.company_id, args.law_id
+                )
+            case "alert_show":
+                result = await alert_service.get_alert(repository, args.alert_show)
+            case "alert_seen":
+                result = await alert_service.mark_seen(repository, args.alert_seen)
+            case "alert_dismiss":
+                result = await alert_service.dismiss(repository, args.alert_dismiss, args.reason)
+            case "template_show":
+                result = await email_service.get_template(repository)
+            case "template_edit":
+                subject, sep, body = _read_mail_file(args.template_edit).partition("\n")
+                if not sep:
+                    raise ValueError("template file needs a subject on line one and a body")
+                result = await email_service.edit_template(
+                    repository, settings, subject.removesuffix("\r"), body
+                )
+            case "email_preview":
+                result = await email_service.prepare_email(repository, settings, args.email_preview)
+            case "email_send":
+                preview = await email_service.prepare_email(repository, settings, args.email_send)
+                request = SendRequest(
+                    alert_id=args.email_send,
+                    recipient=args.recipient,
+                    subject=(
+                        _read_mail_file(args.subject_file).rstrip("\r\n")
+                        if args.subject_file
+                        else preview.subject
+                    ),
+                    body=_read_mail_file(args.body_file) if args.body_file else preview.body,
+                    confirmed=args.yes,
+                    template_updated_at=preview.template_updated_at,
+                )
+                print(f"Mode: {settings.mail_mode}; redirect: {bool(settings.mail_redirect_to)}")
+                print(f"To: {request.recipient}\nSubject: {request.subject}\n\n{request.body}")
+                result = await email_service.send_email(repository, settings, request)
+            case "outreach":
+                result = await repository.list_outreach(args.company_id, args.alert_id)
+            case "outreach_resolve":
+                result = await email_service.resolve_outreach(
+                    repository, args.outreach_resolve, args.resolve_as
+                )
+        payload = (
+            [row.model_dump(mode="json") for row in result]
+            if isinstance(result, list)
+            else result.model_dump(mode="json")
+        )
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        _write_json(args.json, {command: payload})
+        return 0
+    except (RepositoryError, MailError, ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 1
     finally:
         await repository.close()
@@ -457,6 +585,10 @@ def _print_screen(reports: list[ScreenReport]) -> None:
             )
             if r.unjudged:
                 print(f"  unjudged (retried next screen): {', '.join(r.unjudged)}")
+            if r.deferred:
+                print(f"  deferred over the judge budget (screen again): {', '.join(r.deferred)}")
+            if r.invalidated:
+                print(f"  earlier decisions no longer current: {r.invalidated}")
         print(f"  {r.headline()}")
 
 
@@ -465,6 +597,8 @@ def _print_matches(company_id: str, matches: list[Match]) -> None:
     print(f"\nMatches of '{company_id}': {len(matches)} stored, {hits} relevant")
     for m in matches:
         verdict = f"{m.judge_direction}" if m.judge_relevant else "not relevant"
+        if not m.is_current:
+            verdict += f", not current: {m.invalidation_reason}"
         norm = ", norm match" if m.norm_match else ""
         print(f"  [{verdict}] {m.law_title}, {m.section_ref} (score {m.score:.3f}{norm})")
         print(f"      feature {m.feature_ref}: {m.feature_text}")
@@ -511,6 +645,10 @@ def _print_update(result: UpdateResult) -> None:
         print(f"  vectors refreshed: {', '.join(result.changed_features) or 'metadata only'}")
     elif result.embeddings_stale:
         print(f"  vectors stale ({result.refresh_error}); run --advance to repair")
+    if result.screening is not None:
+        print(f"  re-screened: {result.screening['status']}, hits {result.screening['hits']}")
+    if result.screening_error:
+        print(f"  {result.screening_error}; run --screen-pending to retry")
 
 
 def _print_profile(profile: ConfirmedProfile) -> None:
@@ -843,6 +981,30 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     screening.add_argument("--matches", action="store_true", help="list matches of --company-id")
     screening.add_argument("--only-hits", action="store_true", help="--matches: relevant only")
+    screening.add_argument(
+        "--history", action="store_true", help="--matches: include non-current decisions"
+    )
+    outreach = parser.add_argument_group("alerts and email (steps 16 to 18, postgres only)")
+    outreach.add_argument("--alerts", action="store_true", help="list new/seen alerts and counts")
+    outreach.add_argument("--status", choices=[str(s) for s in AlertStatus] + ["all"])
+    outreach.add_argument("--alert-show", type=int, metavar="ID")
+    outreach.add_argument("--alert-seen", type=int, metavar="ID")
+    outreach.add_argument("--alert-dismiss", type=int, metavar="ID")
+    outreach.add_argument("--reason", help="optional dismissal reason")
+    outreach.add_argument("--template-show", action="store_true")
+    outreach.add_argument("--template-edit", metavar="FILE", help="subject on line 1, then body")
+    outreach.add_argument("--email-preview", type=int, metavar="ID")
+    outreach.add_argument("--email-send", type=int, metavar="ID")
+    outreach.add_argument("--recipient", metavar="ADDRESS")
+    outreach.add_argument("--subject-file", metavar="FILE")
+    outreach.add_argument("--body-file", metavar="FILE")
+    outreach.add_argument("--yes", action="store_true", help="explicitly confirm this send")
+    outreach.add_argument(
+        "--outreach", action="store_true", help="sent, failed and pending history"
+    )
+    outreach.add_argument("--alert-id", type=int, help="--outreach filter")
+    outreach.add_argument("--outreach-resolve", type=int, metavar="ID")
+    outreach.add_argument("--as", dest="resolve_as", choices=["sent", "failed"])
     return parser.parse_args(argv)
 
 

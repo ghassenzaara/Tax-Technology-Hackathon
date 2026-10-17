@@ -92,6 +92,13 @@ def is_valid(spec: FieldSpec, value: Any) -> bool:
 def _valid_scalar(spec: FieldSpec, value: Any) -> bool:
     match spec.type:
         case FieldType.STRING:
+            if spec.format == "email":
+                from app.mail.validate import address
+
+                try:
+                    address(value)
+                except ValueError:
+                    return False
             return isinstance(value, str)
         case FieldType.ENUM:
             return isinstance(value, str) and value in (spec.enum or [])

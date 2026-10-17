@@ -10,8 +10,8 @@ fails the run; a crash of the run itself sets state failed with the error text.
 Concurrency: at most one active run per company (a second start is refused) and a global cap
 on simultaneous runs (later runs wait as `queued`). At server start, runs left queued or
 running are marked interrupted; a rerun resumes cheaply because candidate writes are
-idempotent. After a confirm the manager runs embed then cleanup (steps 9 and 10) in the
-background, and after an update the embedding refresh.
+idempotent. A draft that cannot be saved fails the run (nothing is published). The work
+after confirmation (embed, clean up, refresh, screening) runs as jobs (runs/jobs.py).
 """
 
 import asyncio
@@ -34,8 +34,6 @@ from app.models.extraction import DocumentExtraction, ExtractionStatus, summariz
 from app.models.project import ProjectState
 from app.models.run import Run, RunDocument, RunState
 from app.profile.schema import ProfileSchema
-from app.services.cleanup import cleanup_project
-from app.services.embed import Embedder
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +64,7 @@ class RunManager:
         self._slots = asyncio.Semaphore(settings.max_active_runs)  # global run cap
         self._lock = asyncio.Lock()  # one start decision at a time
         self._runs: dict[str, asyncio.Task] = {}  # company id -> active run task
-        self._tasks: set[asyncio.Task] = set()  # every background task (runs, embed, cleanup)
+        self._tasks: set[asyncio.Task] = set()  # every active run task
 
     async def startup(self) -> None:
         interrupted = await self.repository.interrupt_active_runs(RESTARTED)
@@ -138,14 +136,6 @@ class RunManager:
         return await self.start(
             company_id, folder, project_name=runs[0].project_name, started_by="rerun"
         )
-
-    def start_advance(self, company_id: str) -> None:
-        """After a confirm: embed (step 9), then clean up (step 10), in the background."""
-        self._spawn(self._advance(company_id))
-
-    def start_refresh(self, company_id: str, changed: set[str]) -> None:
-        """After an update: refresh the affected vectors in the background (plan 4b.5)."""
-        self._spawn(self._refresh(company_id, changed))
 
     def _spawn(self, coroutine) -> asyncio.Task:
         task = asyncio.create_task(coroutine)
@@ -219,41 +209,6 @@ class RunManager:
         draft = await orchestrator.merge(run.company_id, extractions, run_scoped=True)
         await orchestrator.publish(draft, extractions, run_scoped=True)
         run.published = True
-
-    async def _advance(self, company_id: str) -> None:
-        if self.client is None:
-            await self.repository.record_error(
-                company_id, "embed failed: no OPENAI_API_KEY configured on the server"
-            )
-            return
-        try:
-            await Embedder(self.repository, self.schema, self.settings, self.client).run(company_id)
-        except Exception as exc:  # the embedder recorded the error; the state is unchanged
-            log.warning("embedding of %s failed: %s", company_id, type(exc).__name__)
-            return
-        folders = {r.folder for r in await self.repository.list_runs(company_id) if r.folder}
-        try:
-            await cleanup_project(
-                self.repository, self.settings, company_id, [Path(f) for f in sorted(folders)]
-            )
-        except Exception as exc:
-            log.warning("cleanup of %s failed: %s", company_id, type(exc).__name__)
-            await self.repository.record_error(
-                company_id, redact(f"cleanup failed: {exc}", self.settings)[:2000]
-            )
-
-    async def _refresh(self, company_id: str, changed: set[str]) -> None:
-        if self.client is None:
-            await self.repository.record_error(
-                company_id, "embedding refresh failed: no OPENAI_API_KEY configured on the server"
-            )
-            return
-        try:
-            await Embedder(self.repository, self.schema, self.settings, self.client).refresh(
-                company_id, changed
-            )
-        except Exception as exc:  # the change stays committed; the stale flag stays set
-            log.warning("embedding refresh of %s failed: %s", company_id, type(exc).__name__)
 
 
 def _record_parse(row: RunDocument, doc: Document) -> None:

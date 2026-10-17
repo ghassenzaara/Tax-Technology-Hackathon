@@ -11,9 +11,13 @@ from app.config import Settings
 DEFAULT = Path(__file__).parent.parent.parent / "openapi.json"
 
 
+def build_spec() -> dict:
+    """The contract as the app generates it (a test compares it with the checked-in file)."""
+    return create_app(Settings(_env_file=None)).openapi()
+
+
 def export(path: Path = DEFAULT) -> Path:
-    app = create_app(Settings(_env_file=None))
-    path.write_text(json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n", "utf-8")
+    path.write_text(json.dumps(build_spec(), indent=2, ensure_ascii=False) + "\n", "utf-8")
     return path
 
 

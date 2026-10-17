@@ -125,7 +125,7 @@ async def test_crash_of_the_run_sets_failed(repository, schema, settings, tmp_pa
     async def broken(*args, **kwargs):
         raise RuntimeError(f"disk full at {settings.data_dir.resolve()}")
 
-    repository.save_profile_draft = broken  # merge still works; publish uses the draft
+    repository.save_profile_draft = broken  # an unsaved draft fails the run (no publish)
     repository.publish_profile = broken
     run = await runs.start("c1", folder)
     await runs.join()

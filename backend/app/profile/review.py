@@ -137,6 +137,13 @@ def typed_value_error(spec: FieldSpec, value: Any) -> str | None:
 def _scalar_error(spec: FieldSpec, value: Any) -> str | None:
     match spec.type:
         case FieldType.STRING:
+            if spec.format == "email":
+                from app.mail.validate import address
+
+                try:
+                    address(value)
+                except ValueError as exc:
+                    return str(exc)
             ok = isinstance(value, str) and bool(value.strip())
             return None if ok else "expected text"
         case FieldType.INTEGER:

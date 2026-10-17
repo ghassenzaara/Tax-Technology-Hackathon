@@ -29,7 +29,9 @@ def rank_sections(
     pairs: list[Pair], laws: dict[int, Law], form_unknown: set[int], settings: Settings
 ) -> list[SectionScore]:
     """Every section with its best features, highest score first; ties go to a norm match.
-    `passed` marks those above the threshold, capped at `match_max_candidates`."""
+    `passed` marks those above the threshold. The candidate cap (`match_max_candidates`)
+    limits the sections judged per screening execution (services/screen.py), not this set:
+    a section with a reusable verdict costs no budget."""
     by_section: dict[int, list[Pair]] = defaultdict(list)
     for pair in pairs:
         by_section[pair.section.id].append(pair)
@@ -58,8 +60,6 @@ def rank_sections(
             )
         )
     ranked.sort(key=lambda s: (s.score, s.norm_match, -s.section.nr), reverse=True)
-    passed = 0
     for s in ranked:
-        if s.score >= settings.match_score_threshold and passed < settings.match_max_candidates:
-            s.passed, passed = True, passed + 1
+        s.passed = s.score >= settings.match_score_threshold
     return ranked

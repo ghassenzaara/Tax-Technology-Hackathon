@@ -1,5 +1,6 @@
 """Companies, Profile, Update and Audit (after confirmation, plan section 4b)."""
 
+import logging
 from datetime import datetime
 from typing import Annotated
 
@@ -14,6 +15,7 @@ from app.models.project import EMBEDDABLE
 from app.models.update import ConfirmedProfile, UpdateRequest, UpdateResult
 from app.services.update import read_profile, update_profile
 
+log = logging.getLogger("app.api")
 router = APIRouter(tags=["profile"], responses=ERROR_RESPONSES)
 
 
@@ -77,9 +79,11 @@ async def profile(services: ServicesDep, company_id: str) -> ConfirmedProfile:
 )
 async def update(services: ServicesDep, company_id: str, body: UpdateBody) -> UpdateResult:
     """All or nothing; there is no undo (ask "are you sure" first). Refused before
-    confirmation (wrong_state), while confirm, embedding or cleanup runs (busy) and on a
+    confirmation (wrong_state), while a step or job of the company runs (busy) and on a
     stale profile version (stale_profile); invalid values come back per field. The vectors
-    are refreshed in the background; Progress shows "embeddings stale" until then."""
+    are refreshed by a background job (then, with SCREEN_AFTER_UPDATE, the changes are
+    re-screened); Progress shows the job and "embeddings stale" until then. A contact
+    address edit needs neither."""
     await company(services, company_id)
     request = UpdateRequest(
         company_id=company_id,
@@ -92,7 +96,10 @@ async def update(services: ServicesDep, company_id: str, body: UpdateBody) -> Up
         services.repository, services.schema, services.settings, request, None, refresh=False
     )
     if result.embeddings_stale:
-        services.runs.start_refresh(company_id, set(result.changed_features))
+        try:
+            await services.jobs.submit_refresh(company_id, set(result.changed_features))
+        except Exception as exc:  # the change stands; Progress offers recovery
+            log.warning("refresh job of %s not started: %s", company_id, type(exc).__name__)
     return result
 
 

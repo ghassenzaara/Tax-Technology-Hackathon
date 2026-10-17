@@ -7,6 +7,8 @@ Input is law text plus the digit-free, name-free feature sentence and its metada
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -92,6 +94,32 @@ def judge_message(candidate: SectionScore, scored: ScoredFeature) -> str:
         f"Rechtsform unbekannt: {'ja' if candidate.form_unknown else 'nein'}",
     ]
     return "\n".join(lines)
+
+
+def input_fingerprint(candidate: SectionScore, settings: Settings) -> str:
+    """Hash of everything the judge would see or that selects what it sees: the actual
+    system prompt, output schema, model and reasoning effort, plus the ordered candidate
+    features with their scores and flags and every complete judge message. A stored verdict
+    is reused only while this is unchanged. The profile version is left out on purpose: a
+    contact edit must not cost judge calls."""
+    payload = {
+        "system": SYSTEM_PROMPT,
+        "schema": JUDGE_SCHEMA,
+        "model": settings.openai_model,
+        "reasoning_effort": settings.judge_reasoning_effort,
+        "form_unknown": candidate.form_unknown,
+        "candidates": [
+            {
+                "feature": scored.feature.ref,
+                "score": round(scored.score, 6),
+                "norm_match": scored.norm_match,
+                "message": judge_message(candidate, scored),
+            }
+            for scored in candidate.features
+        ],
+    }
+    text = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 class Judge:

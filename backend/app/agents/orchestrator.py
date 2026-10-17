@@ -168,10 +168,9 @@ class Orchestrator:
             max_granularity=self.settings.rounding_max_granularity,
             extractions=records,
         )
-        try:
-            await self.repository.save_profile_draft(draft)
-        except Exception:
-            log.exception("could not save the profile draft for %s", company_id)
+        # Review and confirmation read the stored draft: a draft that cannot be saved
+        # (after the configured retries) fails the run instead of being published.
+        await self._retrying(self.repository.save_profile_draft, draft)
         return draft
 
     async def known_extractions(
@@ -232,6 +231,10 @@ class Orchestrator:
         return extraction
 
     async def _write(self, extraction: DocumentExtraction) -> None:
+        await self._retrying(self.repository.replace_document_candidates, extraction)
+
+    async def _retrying(self, write, *args) -> None:
+        """A database write with the configured attempts and backoff; the last error raises."""
         retrying = AsyncRetrying(
             wait=wait_random_exponential(
                 min=self.settings.agent_backoff_min_s, max=self.settings.agent_backoff_max_s
@@ -241,7 +244,7 @@ class Orchestrator:
         )
         async for attempt in retrying:
             with attempt:
-                await self.repository.replace_document_candidates(extraction)
+                await write(*args)
 
 
 def _log_extraction(e: DocumentExtraction) -> None:

@@ -37,7 +37,7 @@ flowchart TD
         PROFILE[("Company profile<br/>structured fields + numeric values")]
         FEAT["Turn each feature into a descriptive sentence"]
         VEC[("Feature vectors<br/>one vector per feature")]
-        DEL["Delete raw DD documents"]
+        DEL["Delete raw DD documents<br/>(folder reference kept until verified gone)"]
         UPD["Advisor updates entries later<br/>(audit log kept)"]
         A1 --> MERGE
         A2 --> MERGE
@@ -48,6 +48,8 @@ flowchart TD
         PROFILE -.->|later edits| UPD
         UPD --> PROFILE
         UPD -.->|refresh changed vectors| FEAT
+        JOBS["Background jobs: embed, clean up, refresh<br/>failed or interrupted: explicit retry or recover"]:::note
+        FEAT -.- JOBS
     end
  
     %% Phase 4: Screening loop
@@ -56,10 +58,10 @@ flowchart TD
         CHUNK["Split each law into sections<br/>and embed each section"]
         FILTER{"Stage 1: rule filter<br/>legal form and tax-type overlap"}
         SIM{"Stage 2: max similarity over<br/>company features above threshold?"}
-        JUDGE{"Stage 3: LLM judge<br/>really relevant? why?"}
+        JUDGE{"Stage 3: LLM judge<br/>really relevant? why?<br/>(reused while its inputs are unchanged)"}
         NEWS --> CHUNK --> FILTER
         FILTER -->|passes| SIM
-        SKIP["Not relevant: skip"]
+        SKIP["Not relevant: skip<br/>(an earlier decision becomes non-current,<br/>its open alert obsolete)"]
         FILTER -->|no| SKIP
         SIM -->|yes| JUDGE
         SIM -->|no| SKIP
@@ -69,20 +71,20 @@ flowchart TD
     VEC ~~~ NEWS
     VEC --> SIM
     PROFILE --> FILTER
+    UPD -.->|decisions wait for re-screening| FILTER
  
     %% Phase 5: Notify and offer
     subgraph P5["5. Notify and reach out"]
         ALERT["Alert the Steuerberater<br/>with matched feature and law section"]
         DRAFT["Show the fixed email template<br/>advisor may edit the text"]
         CONF{"Confirm?"}
-        SEND["Send email to the client<br/>(snapshot + audit entry)"]
-        CAL["Add event to the in-app calendar"]
+        SEND["Send email to the client<br/>(only current decisions; snapshot + audit entry)"]
         ALERT --> DRAFT --> CONF
-        CONF -->|yes| SEND --> CAL
+        CONF -->|yes| SEND
         CONF -->|edit| DRAFT
     end
     JUDGE -->|yes| ALERT
-    CAL -.->|keep screening| NEWS
+    SEND -.->|keep screening| NEWS
  
     PITCH -.-> P1
  

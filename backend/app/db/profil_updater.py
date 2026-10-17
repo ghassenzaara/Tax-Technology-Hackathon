@@ -7,10 +7,12 @@ problem rolls back everything. Changed or added rows get advisor provenance and 
 confirmation stamp of this update; untouched rows are not modified. Each change gets one
 `profile_changed` audit entry (all entries of the call share one update id), the profile
 version goes up by one, and the vectors are marked stale until the embedding refresh
-(services/update.py) has run.
+(services/update.py) has run. An edit that can change features (anything but the contact
+address) also makes the company's screening decisions non-current until screening
+validates them again (their alerts cannot be sent meanwhile).
 """
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -20,7 +22,7 @@ from psycopg.rows import dict_row
 
 from app.config import Settings
 from app.db.audit import read_audit, write_audit
-from app.db.profil_reader import target_company
+from app.db.profil_reader import finding_norm_codes, target_company
 from app.db.profil_writer import ADVISOR_SOURCE, SCHEMA, ProfilWriter, _label
 from app.db.repository import (
     BusyError,
@@ -93,7 +95,20 @@ class ProfilUpdater(ProfilWriter):
                 errors.append(error(change, _db_message(exc)))
         if errors:
             raise UpdateError(errors)
-        stale = state["state"] in (ProjectState.EMBEDDED, ProjectState.CLEANED)
+        # Contact addresses never contribute to feature sentences or judge input.
+        # Editing/clearing one must not make otherwise valid vectors stale.
+        affects_features = any(
+            self.schema.field(change.field).format != "email" for change in self.request.changes
+        )
+        stale = state["embeddings_stale"] or (
+            affects_features and state["state"] in (ProjectState.EMBEDDED, ProjectState.CLEANED)
+        )
+        if affects_features:  # decisions wait for screening; history and alerts are kept
+            await self.conn.execute(
+                "UPDATE screening.match SET is_current = false, "
+                "invalidation_reason = 'profile_changed' WHERE company_id = %s AND is_current",
+                (self.request.company_id,),
+            )
         await self.conn.execute(
             "UPDATE pipeline.project_state SET profile_version = %s, "
             "embeddings_stale = embeddings_stale OR %s, updated_at = now() WHERE company_id = %s",
@@ -112,15 +127,25 @@ class ProfilUpdater(ProfilWriter):
     # Checks and context ----------------------------------------------------------------
 
     async def _lock_state(self) -> dict[str, Any]:
-        """State must be confirmed or later, no step running, version as seen by the UI."""
+        """State must be confirmed or later, no step or background job running (a step
+        marker older than the stale-lock timeout counts as abandoned), version as seen by
+        the UI."""
         cid = self.request.company_id
         async with self.conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
-                "SELECT state, profile_version, draft_version, running_step "
+                "SELECT state, profile_version, draft_version, embeddings_stale, "
+                "CASE WHEN running_since >= now() - make_interval(secs => %s) "
+                "THEN running_step END AS running_step "
                 "FROM pipeline.project_state WHERE company_id = %s FOR UPDATE",
-                (cid,),
+                (self.settings.step_lock_timeout_s, cid),
             )
             state = await cur.fetchone()
+            await cur.execute(
+                "SELECT id, operation FROM pipeline.jobs WHERE company_id = %s "
+                "AND status IN ('queued', 'running') LIMIT 1",
+                (cid,),
+            )
+            job = await cur.fetchone()
         if state is None or state["state"] == ProjectState.PUBLISHED:
             current = state["state"] if state else "not published"
             raise StateError(
@@ -129,6 +154,8 @@ class ProfilUpdater(ProfilWriter):
             )
         if state["running_step"]:
             raise BusyError(f"project '{cid}' is busy ({state['running_step']} running); retry")
+        if job is not None:
+            raise BusyError(f"project '{cid}' is busy (job {job['id']} {job['operation']}); retry")
         if (state["profile_version"] or 1) != self.request.profile_version:
             raise StaleProfileError(
                 f"profile version {self.request.profile_version} is stale "
@@ -366,6 +393,8 @@ class ProfilUpdater(ProfilWriter):
                 new_value=new,
                 reason=self.request.reason,
                 profile_version=self.version,
+                # A contact address never reaches features or the judge: nothing to re-screen.
+                screened_at=datetime.now(UTC) if spec.format == "email" else None,
             ),
         )
 
@@ -415,17 +444,21 @@ async def read_profile(
         scalar_rows[table] = _profile_row(row, documents)
         names = [s.name for s in schema.fields if not s.is_list and s.table == table]
         scalars |= {name: row.get(name) for name in names}
+    # Association tables come back as the list cell the review showed (sorted codes).
+    norms = await finding_norm_codes(conn, updater.deal_id)
     lists = {}
     for spec in schema.fields:
         if not spec.is_list:
             continue
+        table = spec.table or spec.name
         where, params = updater._owner(spec)
         rows = await _rows_json(
             conn,
-            f"SELECT row_to_json(t) FROM {SCHEMA}.{spec.table or spec.name} t "
-            f"WHERE {where} ORDER BY t.id",
+            f"SELECT row_to_json(t) FROM {SCHEMA}.{table} t WHERE {where} ORDER BY t.id",
             params,
         )
+        if table == "finding":
+            rows = [r | {"normen": norms.get(r["id"], [])} for r in rows]
         lists[spec.name] = [_profile_row(r, documents) for r in rows]
     return ConfirmedProfile(
         company_id=company_id,

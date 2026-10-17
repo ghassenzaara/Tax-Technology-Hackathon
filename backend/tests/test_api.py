@@ -81,7 +81,7 @@ async def upload(http, files, project_name=None, use_paths=True):
 
 
 async def finished(http, company_id) -> dict:
-    await http.services.runs.join()
+    await http.services.join()
     response = await http.get(f"/api/companies/{company_id}/progress")
     assert response.status_code == 200
     return response.json()
@@ -180,7 +180,7 @@ async def test_upload_rejects_unsafe_paths_and_keeps_the_rest(settings, schema, 
     ]
     async with api(settings, schema) as http:
         response = await upload(http, files)
-        await http.services.runs.join()
+        await http.services.join()
 
     assert response.status_code == 202, response.text
     body = response.json()
@@ -195,7 +195,7 @@ async def test_upload_without_paths_uses_part_file_names(settings, schema, tmp_p
         response = await upload(
             http, [("DD/sub/a.pdf", pdf_bytes(tmp_path, "a.pdf"))], use_paths=False
         )
-        await http.services.runs.join()
+        await http.services.join()
     assert response.status_code == 202
     assert response.json()["accepted"][0]["relative_path"] == "a.pdf"
 
@@ -229,7 +229,7 @@ async def test_oversize_file_rejected_alone(settings, schema, tmp_path):
         response = await upload(
             http, [("big.pdf", b"%PDF" + b"x" * 20_000), ("ok.pdf", pdf_bytes(tmp_path, "ok.pdf"))]
         )
-        await http.services.runs.join()
+        await http.services.join()
     body = response.json()
     assert [a["relative_path"] for a in body["accepted"]] == ["ok.pdf"]
     assert body["rejected"][0]["reason"].startswith("file too large")

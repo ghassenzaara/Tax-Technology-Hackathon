@@ -4,6 +4,7 @@ import sys
 import uuid
 from pathlib import Path
 
+import psycopg
 import pytest
 
 from app.config import PROFILE_DB_DIR, PROFILE_SCHEMA, Settings
@@ -68,5 +69,21 @@ async def pg_repository():
     repo = PostgresRepository(url)
     await repo.initialize()
     await repo.initialize_profile_schema(PROFILE_DB_DIR)
+    async with await psycopg.AsyncConnection.connect(url) as conn:
+        cur = await conn.execute("SELECT coalesce(max(id), 0) FROM screening.law")
+        (last_law,) = await cur.fetchone()
     yield repo
     await repo.close()
+    # Fake sources (2-dim vectors) must not stay behind: screening every stored law
+    # would fail on them. Real sources and live projects are never touched.
+    async with await psycopg.AsyncConnection.connect(url, autocommit=True) as conn:
+        await conn.execute(
+            "DELETE FROM screening.outreach WHERE company_id LIKE 'test-%' "
+            "OR alert_id IN (SELECT id FROM screening.alert WHERE company_id LIKE 'test-%')"
+        )
+        await conn.execute("DELETE FROM screening.alert WHERE company_id LIKE 'test-%'")
+        await conn.execute(
+            "DELETE FROM screening.law WHERE id > %s AND (content_hash LIKE 'test%%' "
+            "OR filename LIKE 'test-%%' OR filename = 'gesetz.pdf')",
+            (last_law,),
+        )

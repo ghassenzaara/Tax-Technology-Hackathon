@@ -123,10 +123,25 @@ class Settings(BaseSettings):
     judge_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "low"
     # Re-screen right after an advisor update (default off until the API triggers it).
     screen_after_update: bool = False
+    # A legal source uploaded through the API is screened against every eligible company
+    # in the same job, so a relevant new law alerts the advisor without another call.
+    screen_after_ingest: bool = True
 
     # Single-user platform (one Steuerberater, no login): the label stamped as bestaetigt_von
     # and in the audit log by the HTTP API, which takes no person from the caller.
     advisor_label: str = Field(default="Steuerberater", min_length=1)
+
+    # Outreach (16 to 18). TODO: review text/signature, caps and timeout with the advisor.
+    mail_mode: Literal["log", "smtp"] = "log"
+    gmail_address: str = ""
+    gmail_app_password: SecretStr | None = None
+    mail_redirect_to: str | None = None
+    sender_name: str = "TODO: Name des Steuerberaters"
+    sender_firm: str = "TODO: Name der Kanzlei"
+    smtp_timeout_s: float = Field(default=20, gt=0)
+    mail_subject_max_chars: int = Field(default=200, gt=0)
+    mail_body_max_chars: int = Field(default=5000, gt=0)
+    mail_recipient_max_chars: int = Field(default=254, gt=0, le=254)
 
     # HTTP API and upload layer (step 0).
     # TODO: hosting and start command outside local development (deferred with deployment).
