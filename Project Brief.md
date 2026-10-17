@@ -23,11 +23,11 @@ Diagram: `Project Diagram.mmd`. Use these step numbers when referring to a part 
 | 8 | Advisor reviews and confirms the profile; later the advisor can update entries (audit log kept, vectors refreshed) | 3. Company profile | Built (services, CLI and HTTP API) |
 | 9 | Turn each feature into a descriptive sentence, embed it, store the vectors | 3. Company profile | Built |
 | 10 | Delete raw documents, scan markdown, candidate rows, drafts | 3. Company profile | Built |
-| 11 | Take a law (prototype: one hand-picked law PDF, parsed by our pipeline; no fetching) | 4. Screening loop | Planned |
-| 12 | Split laws into sections and embed each section (deterministic splitter, norms by regex) | 4. Screening loop | Planned |
-| 13 | Stage 1: rule filter on structured fields | 4. Screening loop | Planned |
-| 14 | Stage 2: max vector similarity over company features | 4. Screening loop | Planned |
-| 15 | Stage 3: LLM judge, store the match | 4. Screening loop | Planned |
+| 11 | Take a supplied legal-source PDF, parsed by our pipeline; no fetching | 4. Screening loop | Built (CLI) |
+| 12 | Split sources into sections and embed each section (deterministic splitter, norms by regex) | 4. Screening loop | Built |
+| 13 | Stage 1: rule filter on structured fields | 4. Screening loop | Built |
+| 14 | Stage 2: max vector similarity over company features | 4. Screening loop | Built |
+| 15 | Stage 3: LLM judge, store the match | 4. Screening loop | Built (services and CLI; live check passed) |
 | 16 | Alert the advisor with matched feature and law section | 5. Notify and reach out | Planned |
 | 17 | Prepare the email from the fixed template (same text for every client, no LLM); the advisor may edit it before sending | 5. Notify and reach out | Planned |
 | 18 | Advisor confirms, email is sent | 5. Notify and reach out | Planned |
@@ -35,7 +35,7 @@ Diagram: `Project Diagram.mmd`. Use these step numbers when referring to a part 
 
 Step 0: the UI (teammates) sends the folder; our backend receives it through the HTTP API and upload layer (built following `API Upload Implementation Plan.md`; the contract for the UI team is `backend/openapi.json` plus `UI.md`). The API holds no business logic: it calls the services of the other steps. Calls: Health, Upload, Progress, Rerun, Draft, Confirm, Update, Audit, Companies, Profile. One upload request carries the whole data room with relative paths; untrusted paths are checked and files stream to a per-company folder (`data/uploads/<company_id>`); the run (steps 1 to 7 plus publish) runs in the background and the UI polls Progress. After Confirm, embedding and cleanup (steps 9 and 10) run in the background; after an Update the vectors are refreshed in the background. Contract clause about saving the profile is a pitch point only (no code).
 
-**Ownership.** Decided: steps 11 and 12 are ours for the prototype and reduced to one hand-picked law PDF that was published earlier and fits the mock case; the backend parses, splits and embeds it itself, no fetching and no API call to a law source (the teammates' search for real sources is parked). Our team owns steps 0 to 15 and the backend logic of steps 16 to 19 (section 2.6). Matching is planned in `Matching Implementation Plan.md`. The frontend, the fixtures and the DB schema `profil` come from teammates. The frontend, the fixtures and the DB schema `profil` come from teammates.
+**Ownership.** Steps 11 and 12 are ours for the prototype: the backend parses, splits and embeds one supplied PDF, with no fetching or API call to a law source. The matching input is the user-supplied `BFH-Urteil-I-R-1-23.pdf` in `backend/mock_laws/`. The earlier I R 37/22 PDF belonged to another test company and is retained only as a previous run. Sources use the existing `other` kind in `screening`; `profil.urteil` stays unused. Our team owns steps 0 to 15 and the backend logic of steps 16 to 19 (section 2.6). Matching is implemented following `Matching Implementation Plan.md`. The frontend, fixtures and DB schema `profil` come from teammates.
 
 ---
 
@@ -66,16 +66,18 @@ Step 0: the UI (teammates) sends the folder; our backend receives it through the
 - Storage, one row per feature: `company_id, feature_type, text, vector`.
 
 ### 2.4 Law ingestion
-- Prototype (decided): one law PDF supplied by the user, ingested by a CLI command; our pipeline parses it, splits it into sections and embeds each section (law text itself, not a paraphrase). Laws live in our schema `screening`, not in `profil`. Fetching from real sources is out of scope for now.
+- Prototype (built): one supplied legal-source PDF, ingested by `--ingest-law`; our pipeline parses it, splits it into sections and embeds each section (source text itself, not a paraphrase). Laws live in our schema `screening`, not in `profil`. The supplied BFH ruling is stored as kind `other`, with sequential margin-number splitting. Automated fetching and a separate court-ruling workflow remain out of scope.
 - Later sources (not built, start with 2 or 3, add more later): BMF-Schreiben, NeuRIS / rechtsinformationen.bund.de, Bundestag DIP, EUR-Lex / Cellar SPARQL, later BFH rulings and BGBl.
 - Split each law into **sections** and embed each section separately.
 
 ### 2.5 Matching: 3 stages
-1. **Rule filter** on structured fields: legal form, industry, region, numeric thresholds.
+1. **Rule filter** on legal form and pair-level tax-type overlap. Missing values pass; norm overlap is a signal, not a filter or threshold bypass. Industry, region, numeric thresholds and temporal rules are deferred in this milestone.
 2. **Vector match:** `score(company, law_section) = max over features of cos(feature, section)`. Max, not average.
 3. **LLM judge:** "relevant yes/no, why", referencing the matched feature and law section.
 
 Every hit is stored as `(company_id, feature_id, law_section_id, score, judge_reason)`, which feeds the alert. The email does not use the hit details: it is the same template for every client.
+
+Source-level matching UI data: `summary` supplies **Zusammenfassung**, `change_summary` supplies **Was ändert sich?**, and each matched company's `judge_reason` plus direction supplies **Relevanz und Auswirkungen**. The existing metadata call generates the separate German change/clarification explanation from source pages; missing evidence stays null and rulings describe a court clarification rather than a legislative amendment. `006_law_change_summary.sql` adds the nullable column without replacing sources or matches. CLI JSON exports include it; HTTP and frontend integration remain deferred.
 
 ### 2.6 Notify and reach out
 - Alert shows: law section, matched feature, reason.
@@ -99,7 +101,7 @@ companies(id, name, profile_json, contact_name, contact_email, created_at)
 
 company_features(id, company_id, feature_type, text, vector, source_doc, source_page)
 
-law(id, kind, title, reference, published_at, effective_at, status, legal_forms, tax_types, summary, filename, content_hash)
+law(id, kind, title, reference, published_at, effective_at, status, legal_forms, tax_types, summary, change_summary, filename, content_hash)
     -- schema screening (ours), see Matching Implementation Plan.md
 
 law_section(id, law_id, nr, section_ref, heading, page_from, page_to, text, norms, tax_types, model, vector)
@@ -250,7 +252,8 @@ tests/
 - TODO: **Free-text cells in list rows** (Merkmal `kurztext`, `sitz_wohnort`, `anteile`) make rows conflict when documents word them differently; on the mock data most of the 36 review decisions were such wording differences. Decide whether free-text cells should stop counting as a conflict (keep the strongest source's wording) or stay advisor decisions.
 - TODO (steps 8 to 10, details in `Confirm Embed Cleanup Implementation Plan.md`): whether needs-review values need explicit acknowledgement; let the advisor complete skipped list rows and add new rows; how a later DD updates a confirmed profile from documents (manual updates are decided); which tables support ending an entry, whether a reason is mandatory, history inside `profil`; embed `unbekannt` Merkmale (default no); industry (WZ) embedding needs an allowed type in `embedding`; embedding model id, dimension, batch size; statute to tax-type mapping and the `offen` derivation; switch the vector column to `vector(1536)` with HNSW; per-company upload folder for cleanup.
 - TODO (step 0, built; details in `API Upload Implementation Plan.md`): chunked or resumable uploads, adding files to an existing company, cleanup of abandoned uploads; tune the upload limits (placeholders: 50 MB per file, 500 MB total, 300 files) and the global run cap (2); the UI team's dev URL and port for CORS (defaults: localhost 3000 and 5173); whether the UI needs a live per-document "processing" state; server hosting. Live check through HTTP on the Nordhafen mock data: run 82 s for 17 PDFs, 38 decisions, embedding and cleanup in the background in 9 s.
-- TODO (steps 11 to 15, details in `Matching Implementation Plan.md`): the law PDF (user supplies it) and its heading patterns; score threshold and candidate cap (calibrate with `--screen --dry-run`); judge prompt, reasoning effort, features per section; temporal rule (law effective date against open years) and numeric condition rules; whether a norm match bypasses the threshold; real law sources and court rulings (`profil.urteil`) later; `vector(1536)` with HNSW; HTTP endpoints for laws and matches.
+- Done (steps 11 to 15): shared structured-output/embedding helpers, atomic PDF ingestion, section vectors, three-stage matching, stored yes/no results, unchanged-pair skipping, `--force`, `--screen-pending` and optional re-screen after updates. Offline and Postgres tests cover the flow. BFH I R 1/23 yields 32 sections from 7 pages (6.0 s). Live check against `Hafenkante-live`: 13 features, 224 surviving pairs, 20 initially judged sections, five stored hits with German reasons (25.7 s, tokens 51,496/7,175). Initial cutoff calibration to 0.54 retains all five hits with 17 candidates; rerun skips all 17 with zero judge tokens. Positive-hit live acceptance passed. Details and score sweep: `backend/mock_laws/README.md`.
+- TODO (steps 11 to 15, details in `Matching Implementation Plan.md`): validate the initial 0.54 cutoff and candidate cap 20 on more labelled source/profile pairs; a single mock case does not establish general accuracy. Further heading layouts, judge wording, reasoning effort and features per section need more examples. Temporal and numeric condition rules, norm threshold bypass, automated sources, `profil.urteil`, `vector(1536)`/HNSW and HTTP endpoints remain deferred.
 - TODO (steps 16 to 19, details in `Alerts Email Calendar Implementation Plan.md`): review and change the proposed template text, signature, sender name and firm; add the column `ansprechpartner_email` to the teammates' `profil.gesellschaft` (tell them) and a contact email to one fixture; Gmail app password and `MAIL_REDIRECT_TO` for the live check (Gmail API with OAuth later); whether a dismissed alert can be reopened; calendar time of day, reminders and whether `v_fristen` deadlines show in the calendar; follow-up default (7 days); HTTP endpoints for alerts, template, send and calendar.
 - Decided: alerts live in our schema `screening` (the teammates' `profil.alert` refers to rulings and has a person column and stays unused).
 - Done: **Single user**: the platform serves one Steuerberater. No login, no users, no person in any call; the audit log records what and when only. Existing code still carries person fields until the change request in `Confirm Embed Cleanup Implementation Plan.md` (section 10) is applied.

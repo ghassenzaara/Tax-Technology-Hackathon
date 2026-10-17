@@ -8,7 +8,9 @@ from pydantic import SecretStr
 
 from app import cli
 from app.config import PROFILE_SCHEMA
+from app.db.memory import MemoryRepository
 from app.ingest import pipeline
+from app.models.law import Law
 from tests.helpers import (
     SENTENCE,
     FakeClient,
@@ -18,6 +20,7 @@ from tests.helpers import (
     make_pdf,
     make_simple_excel,
 )
+from tests.test_laws import METADATA
 
 ANSWER = answer(employees=entry(25, evidence="Restaurant in Berlin mit 25 Mitarbeitern"))
 
@@ -92,6 +95,28 @@ def test_bad_schema_fails_fast(folder, tmp_path, keyed):
 
 def test_postgres_without_url_fails_fast(folder, keyed):
     assert cli.main([str(folder), "--extract", "--repository", "postgres"]) == 2
+
+
+def test_laws_exports_ui_summaries_without_key(settings, tmp_path, monkeypatch, capsys):
+    repo = MemoryRepository()
+    repo.laws[1] = Law(id=1, **METADATA, filename="law.pdf", content_hash="test")
+    # Existing source rows can have no change summary until a metadata refresh.
+    repo.laws[2] = repo.laws[1].model_copy(update={"id": 2, "change_summary": None})
+    monkeypatch.setattr(
+        cli,
+        "get_settings",
+        lambda: settings.model_copy(
+            update={"repository": "postgres"},
+        ),
+    )
+    monkeypatch.setattr(cli, "make_repository", lambda _: repo)
+    out = tmp_path / "laws.json"
+    assert cli.main(["--laws", "--json", str(out)]) == 0
+    rows = json.loads(out.read_text("utf-8"))["laws"]
+    assert rows[0]["summary"] == METADATA["summary"]
+    assert rows[0]["change_summary"] == METADATA["change_summary"]
+    assert rows[1]["change_summary"] is None
+    assert "Was ändert sich?" in capsys.readouterr().out
 
 
 def test_publish_needs_postgres(folder, keyed):

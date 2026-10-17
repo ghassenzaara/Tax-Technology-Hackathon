@@ -12,6 +12,7 @@ from app.config import Settings
 from app.db.repository import (
     WORKING_TABLES,
     BusyError,
+    DuplicateLawError,
     PublishReport,
     Repository,
     RepositoryError,
@@ -30,6 +31,8 @@ from app.models.features import (
     NormRef,
     ProfileSnapshot,
 )
+from app.models.law import Law, LawSection
+from app.models.match import CompanyFeatures, Match
 from app.models.profile import FieldStatus, ProfileDraft
 from app.models.project import EMBEDDABLE, Confirmation, ProjectState, ProjectStatus
 from app.models.review import HintRow
@@ -65,6 +68,11 @@ class MemoryRepository(Repository):
         self.audit: list[AuditEntry] = []  # append-only, like the database table
         self.runs: dict[str, Run] = {}
         self.run_documents: dict[tuple[str, str], RunDocument] = {}  # (run, path) -> row
+        self.norm_codes: set[str] = set()  # stand-in for profil.norm
+        self.laws: dict[int, Law] = {}
+        self.sections: dict[int, LawSection] = {}
+        self.matches: dict[tuple[str, int], Match] = {}  # (company, law section) -> row
+        self._next_id = 0
 
     async def initialize(self) -> None:
         pass
@@ -342,6 +350,109 @@ class MemoryRepository(Repository):
         state.state = ProjectState.CLEANED
         state.cleaned_at = datetime.now(UTC)
         state.last_error = None
+
+    # Steps 11 to 15: laws and screening -------------------------------------------------
+
+    def _new_id(self) -> int:
+        self._next_id += 1
+        return self._next_id
+
+    async def list_norm_codes(self) -> set[str]:
+        return set(self.norm_codes)
+
+    async def find_law(self, content_hash: str) -> Law | None:
+        law = next((x for x in self.laws.values() if x.content_hash == content_hash), None)
+        return law.model_copy(deep=True) if law else None
+
+    async def save_law(self, law: Law, sections: list[LawSection], *, replace: bool) -> int:
+        old = await self.find_law(law.content_hash)
+        if old is not None and not replace:
+            raise DuplicateLawError(f"law '{old.title}' (id {old.id}) is already stored")
+        if old is not None:  # cascade, like the foreign keys
+            del self.laws[old.id]
+            self.sections = {k: v for k, v in self.sections.items() if v.law_id != old.id}
+            self.matches = {k: v for k, v in self.matches.items() if v.law_id != old.id}
+        law_id = self._new_id()
+        self.laws[law_id] = law.model_copy(
+            update={"id": law_id, "ingested_at": datetime.now(UTC)}, deep=True
+        )
+        for section in sections:
+            section_id = self._new_id()
+            self.sections[section_id] = section.model_copy(
+                update={"id": section_id, "law_id": law_id}, deep=True
+            )
+        return law_id
+
+    async def list_laws(self) -> list[Law]:
+        return [
+            law.model_copy(
+                update={"sections": sum(s.law_id == law_id for s in self.sections.values())},
+                deep=True,
+            )
+            for law_id, law in sorted(self.laws.items())
+        ]
+
+    async def list_law_sections(self, law_id: int | None = None) -> list[LawSection]:
+        rows = [s for s in self.sections.values() if law_id is None or s.law_id == law_id]
+        return [s.model_copy(deep=True) for s in sorted(rows, key=lambda s: (s.law_id, s.nr))]
+
+    async def update_law_change_summary(self, law_id: int, change_summary: str | None) -> None:
+        if law_id not in self.laws:
+            raise RepositoryError(f"no law with id {law_id}")
+        self.laws[law_id].change_summary = change_summary
+
+    async def company_features(self, company_id: str) -> CompanyFeatures:
+        draft = self.published.get(company_id)
+        rechtsform = None
+        if draft is not None and "rechtsform" in draft.schema_fields:
+            rechtsform = draft.field("rechtsform").chosen
+        return CompanyFeatures(
+            company_id=company_id,
+            gesellschaft_id=GESELLSCHAFT_ID,
+            rechtsform=rechtsform if isinstance(rechtsform, str) else None,
+            features=[r.model_copy(deep=True) for r in self.embeddings.get(company_id, [])],
+        )
+
+    async def list_matches(self, company_id: str, only_hits: bool = False) -> list[Match]:
+        rows = [
+            m.model_copy(
+                update={
+                    "section_ref": self.sections[m.law_section_id].section_ref,
+                    "law_title": self.laws[m.law_id].title,
+                },
+                deep=True,
+            )
+            for (company, _), m in self.matches.items()
+            if company == company_id and (m.judge_relevant or not only_hits)
+        ]
+        return sorted(rows, key=lambda m: (not m.judge_relevant, -m.score, m.law_section_id))
+
+    async def save_matches(self, matches: list[Match]) -> None:
+        for m in matches:
+            key = (m.company_id, m.law_section_id)
+            old = self.matches.get(key)
+            self.matches[key] = m.model_copy(
+                update={
+                    "id": old.id if old else self._new_id(),
+                    "score": round(m.score, 4),  # numeric(5,4)
+                    "created_at": datetime.now(UTC),
+                },
+                deep=True,
+            )
+
+    async def pending_profile_changes(self, company_id: str) -> list[int]:
+        return [
+            e.id
+            for e in self.audit
+            if e.company_id == company_id
+            and e.kind is AuditKind.PROFILE_CHANGED
+            and e.screened_at is None
+        ]
+
+    async def mark_screened(self, entry_ids: list[int]) -> None:
+        for e in self.audit:
+            if e.id in entry_ids and e.screened_at is None:
+                e.screened_at = datetime.now(UTC)
 
 
 def _conflicts(draft: ProfileDraft) -> dict[str, bool]:

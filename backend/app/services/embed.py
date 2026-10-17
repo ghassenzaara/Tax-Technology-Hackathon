@@ -20,7 +20,7 @@ from app.config import Settings
 from app.db.repository import Repository, StateError
 from app.features.select import select_features
 from app.features.sentences import SentenceWriter
-from app.llm import call_with_retry
+from app.llm import embed_texts
 from app.models.features import EmbeddingRecord, EmbedReport, Feature
 from app.models.project import EMBEDDABLE, ProjectState
 from app.profile.schema import ProfileSchema
@@ -123,29 +123,7 @@ class Embedder:
 
     async def _embed(self, texts: list[str]) -> list[list[float]]:
         """Vectors in input order; checks count, order and dimension of every batch."""
-        size = self.settings.embedding_batch_size
-        batches = [texts[i : i + size] for i in range(0, len(texts), size)]
-        results = await asyncio.gather(*(self._embed_batch(b) for b in batches))
-        return [vector for batch in results for vector in batch]
-
-    async def _embed_batch(self, texts: list[str]) -> list[list[float]]:
-        settings = self.settings
-        response = await call_with_retry(  # transient errors are retried here
-            lambda: self.client.embeddings.create(model=settings.embedding_model, input=texts),
-            slots=self.slots,
-            max_attempts=settings.agent_max_attempts,
-            backoff_min_s=settings.agent_backoff_min_s,
-            backoff_max_s=settings.agent_backoff_max_s,
-        )
-        data = sorted(getattr(response, "data", None) or [], key=lambda d: d.index)
-        if [d.index for d in data] != list(range(len(texts))):
-            raise EmbedError(f"expected {len(texts)} vectors, got {len(data)}")
-        for d in data:
-            if len(d.embedding) != settings.embedding_dimension:
-                raise EmbedError(
-                    f"vector dimension {len(d.embedding)}, expected {settings.embedding_dimension}"
-                )
-        return [list(d.embedding) for d in data]
+        return await embed_texts(self.client, self.settings, self.slots, texts)
 
 
 def _record(feature: Feature, model: str, vector: list[float], text: str) -> EmbeddingRecord:

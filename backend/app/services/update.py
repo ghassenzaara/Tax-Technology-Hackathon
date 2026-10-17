@@ -4,7 +4,8 @@ The update itself is one transaction in the repository (validation, advisor prov
 stamps, closed hints, history, profile version). The embedding refresh runs after the
 commit: if it fails, the change stays committed and the project keeps the "embeddings
 stale" flag; `--advance` (a full embed) repairs it. The later HTTP API runs the refresh in
-the background; the CLI runs it right away.
+the background; the CLI runs it right away. With `screen_after_update` the company is then
+re-screened against the stored laws (otherwise `--screen-pending` does it).
 """
 
 import logging
@@ -17,6 +18,7 @@ from app.db.repository import Repository
 from app.models.update import ConfirmedProfile, UpdateRequest, UpdateResult
 from app.profile.schema import ProfileSchema
 from app.services.embed import Embedder
+from app.services.screen import Screener
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +62,11 @@ async def update_profile(
         result.refresh_error = str(exc)
         return result
     result.embeddings_refreshed, result.embeddings_stale = True, False
+    if settings.screen_after_update:
+        try:
+            await Screener(repository, settings, client).screen_pending(request.company_id)
+        except Exception as exc:  # the change stays committed; --screen-pending retries
+            log.warning("re-screening failed for %s: %s", request.company_id, type(exc).__name__)
     return result
 
 

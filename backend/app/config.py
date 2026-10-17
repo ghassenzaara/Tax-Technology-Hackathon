@@ -104,6 +104,26 @@ class Settings(BaseSettings):
         "EStG": ["ESt"],
     }
 
+    # Steps 11 and 12: one law PDF, split into sections, one vector per section.
+    # TODO: tune the metadata pages and the section token range after the first real law.
+    law_metadata_pages: int = Field(default=3, gt=0)
+    law_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "low"
+    section_min_tokens: int = Field(default=80, gt=0)
+    section_target_tokens: int = Field(default=400, gt=0)
+    section_max_tokens: int = Field(default=800, gt=0)
+
+    # Steps 13 to 15: rule filter, max cosine score, LLM judge.
+    # BFH I R 1/23 + Nordhafen: 0.54 retains all 5 observed hits, 17 rather than 20 candidates.
+    # TODO: validate this initial calibration and cap on more labelled source/profile pairs.
+    match_score_threshold: float = Field(default=0.54, ge=-1, le=1)
+    match_max_candidates: int = Field(default=20, gt=0)
+    # TODO: tune features per section, judge concurrency and reasoning effort.
+    judge_features_per_section: int = Field(default=3, gt=0)
+    judge_concurrency: int = Field(default=5, gt=0)
+    judge_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "low"
+    # Re-screen right after an advisor update (default off until the API triggers it).
+    screen_after_update: bool = False
+
     # Single-user platform (one Steuerberater, no login): the label stamped as bestaetigt_von
     # and in the audit log by the HTTP API, which takes no person from the caller.
     advisor_label: str = Field(default="Steuerberater", min_length=1)

@@ -31,3 +31,29 @@
 After confirmation the advisor can update entries: `uv run python -m app.cli --update changes.json --changed-by "Name" --company-id PROJECT` (format: `UpdateRequest` in `app/models/update.py`; edit, add, remove, end). The affected vectors are refreshed right away; if that fails the project is marked "embeddings stale" and `--advance` repairs it. `--profile` and `--history` print the confirmed profile and its change history.
 
 Known limits: files you write with `--json` or `--markdown` contain document text and are not deleted by step 10. Log lines carry file names and counts only. Backups, write-ahead logs and the OpenAI side are out of scope for now.
+
+## Laws and matching (steps 11 to 15, Postgres CLI)
+
+Set `DATABASE_URL` and use `--repository postgres`. `--init-db` applies `005_screening.sql`, creating `screening.law`, `screening.law_section` and `screening.match`, plus `006_law_change_summary.sql` for the source-level UI explanation. Ingestion and judging need `OPENAI_API_KEY`; dry-run scoring and stored-result reads do not.
+
+```powershell
+uv run python -m app.cli --ingest-law mock_laws/BFH-Urteil-I-R-1-23.pdf --repository postgres
+uv run python -m app.cli --laws --repository postgres --json laws.json
+# Use the law id printed by ingest; it differs between databases.
+uv run python -m app.cli --screen --company-id Hafenkante-live --law-id LAW_ID --dry-run --repository postgres
+uv run python -m app.cli --screen --company-id Hafenkante-live --law-id LAW_ID --repository postgres
+uv run python -m app.cli --matches --company-id Hafenkante-live --only-hits --repository postgres --json hits.json
+uv run python -m app.cli --screen-pending --company-id Hafenkante-live --repository postgres
+```
+
+Ingestion reuses the document parser, reads metadata with one structured model call (one repair retry), splits with plain code, and embeds sections with the same model as step 9. File hashes prevent duplicates; `--replace` atomically replaces the source and removes its old sections and matches. A failed ingest leaves stored data intact. `--screen-after-ingest` chains screening after a successful ingest.
+
+Screening accepts `embedded` or `cleaned` projects with fresh vectors and takes the per-company busy lock. Stage 1 filters legal form and tax type; unknown values pass. Stage 2 uses the **maximum** feature cosine per section, then the threshold and candidate cap. Norm overlap breaks score ties but does not bypass the threshold. Stage 3 tries up to three features per section, stopping at the first yes; all no retains the highest-scoring pair. Output that remains invalid is unjudged and retried later. Stored results include both yes and no, one row per company/section. Identical reruns skip the judge; changing/removing the stored feature re-judges that section. `--force` re-judges every current candidate.
+
+Omit `--company-id` to screen all eligible projects; omit `--law-id` to screen all stored sources. `--dry-run` stops before the judge and writes nothing. After a profile update, `--screen-pending` processes outstanding `profile_changed` audit entries; it marks them screened only when no candidate remains unjudged. `SCREEN_AFTER_UPDATE=true` enables this after the CLI's embedding refresh; default false. HTTP endpoints, alerts and scheduling remain outside this milestone.
+
+Tunables in `app/config.py`: `MATCH_SCORE_THRESHOLD` (0.54, initially calibrated on BFH I R 1/23 and Nordhafen), `MATCH_MAX_CANDIDATES` (20), `JUDGE_FEATURES_PER_SECTION` (3), `JUDGE_CONCURRENCY` (5), `JUDGE_REASONING_EFFORT`, `LAW_METADATA_PAGES` (3), and section token range 80/400/800. The cutoff retains all five observed hits with 17 candidates instead of 20; further labelled examples are needed to validate it. Models and dimensions must match; mismatches fail explicitly. Numeric and temporal rules are deferred.
+
+The user-supplied BFH I R 1/23 ruling is handled as source kind `other`; there is no `profil.urteil` integration. The live positive-hit check passed: five stored hits against the existing loss/shareholder-change feature, with an unchanged rerun using zero judge tokens. Results and the initial threshold calibration are documented in [mock_laws/README.md](mock_laws/README.md). Tests: `uv run pytest tests/test_laws.py tests/test_screen.py`; Postgres end-to-end tests run when `TEST_DATABASE_URL` is set. All automated model calls use `FakeClient`.
+
+For the planned Gesetzänderungen UI, `summary` supplies **Zusammenfassung**, `change_summary` supplies **Was ändert sich?**, and each positive match's `judge_reason` and `judge_direction` supply company-specific **Relevanz und Auswirkungen**. `change_summary` is generated in the existing metadata call: one or two German sentences about the change or clarification supported by the source pages. Rulings describe what the court clarifies; the model must not invent prior law, dates, or company effects. Missing evidence yields null. The migration leaves existing rows null; the supplied I R 1/23 source has been backfilled while preserving its vectors and five hits. Both `--ingest-law --json` and `--laws --json` expose the two source summaries. HTTP endpoints and frontend rendering are still outside this implementation.

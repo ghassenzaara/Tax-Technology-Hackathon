@@ -25,6 +25,7 @@ from app.db.profil_writer import publish_profile
 from app.db.repository import (
     WORKING_TABLES,
     BusyError,
+    DuplicateLawError,
     PublishReport,
     Repository,
     RepositoryError,
@@ -34,6 +35,8 @@ from app.db.repository import (
 from app.models.audit import AuditEntry, AuditFilter
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import EmbeddingRecord, ProfileSnapshot
+from app.models.law import Law, LawSection
+from app.models.match import CompanyFeatures, Match
 from app.models.profile import ProfileDraft
 from app.models.project import EMBEDDABLE, Confirmation, ProjectState, ProjectStatus
 from app.models.review import HintRow
@@ -98,6 +101,67 @@ INSERT INTO profil.embedding (objekt_typ, objekt_id, gesellschaft_id, steuerarte
     jahre, offen, modell, vektor, text_basis)
 VALUES (%s, %s, %s, %s::profil.steuerart[], %s::text[], %s::int4range, %s, %s, %s::real[], %s)
 """
+
+_INSERT_LAW = """
+INSERT INTO screening.law (kind, title, reference, published_at, effective_at, status,
+    legal_forms, tax_types, summary, change_summary, filename, content_hash)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+"""
+
+_INSERT_SECTION = """
+INSERT INTO screening.law_section (law_id, nr, section_ref, heading, page_from, page_to, text,
+    norms, tax_types, model, vector)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::real[])
+"""
+
+_MATCH_COLUMNS = (
+    "company_id",
+    "gesellschaft_id",
+    "law_id",
+    "law_section_id",
+    "objekt_typ",
+    "objekt_id",
+    "feature_text",
+    "score",
+    "norm_match",
+    "form_unknown",
+    "judge_relevant",
+    "judge_direction",
+    "judge_reason",
+    "judge_confidence",
+    "model",
+    "trigger",
+    "profile_version",
+)
+_UPSERT_MATCH = f"""
+INSERT INTO screening.match ({", ".join(_MATCH_COLUMNS)})
+VALUES ({", ".join(["%s"] * len(_MATCH_COLUMNS))})
+ON CONFLICT (company_id, law_section_id) DO UPDATE SET
+    {", ".join(f"{c} = EXCLUDED.{c}" for c in _MATCH_COLUMNS[1:3] + _MATCH_COLUMNS[4:])},
+    created_at = now()
+"""
+
+# Vectors with their sentence and metadata; the year range comes back as an inclusive pair.
+_EMBEDDINGS = """
+SELECT objekt_typ, objekt_id, gesellschaft_id, steuerarten::text[], normen,
+    lower(jahre), upper(jahre) - 1, upper_inf(jahre), offen, modell, vektor, text_basis
+FROM profil.embedding WHERE gesellschaft_id = %s
+"""
+
+
+def _embedding_record(r: tuple) -> EmbeddingRecord:
+    return EmbeddingRecord(
+        objekt_typ=r[0],
+        objekt_id=r[1],
+        gesellschaft_id=r[2],
+        steuerarten=r[3] or [],
+        normen=r[4] or [],
+        jahre=None if r[5] is None else (r[5], None if r[7] else r[6]),
+        offen=r[8],
+        modell=r[9],
+        vektor=r[10],
+        text_basis=r[11],
+    )
 
 
 def _range(jahre: tuple[int | None, int | None] | None) -> str | None:
@@ -421,27 +485,8 @@ class PostgresRepository(Repository):
     async def list_embeddings(self, company_id: str, model: str) -> list[EmbeddingRecord]:
         async with await self._connection() as conn:
             gesellschaft = await _target_company(conn, company_id)
-            cur = await conn.execute(
-                "SELECT objekt_typ, objekt_id, gesellschaft_id, steuerarten::text[], normen, "
-                "lower(jahre), upper(jahre) - 1, upper_inf(jahre), offen, modell, vektor, "
-                "text_basis FROM profil.embedding WHERE gesellschaft_id = %s AND modell = %s",
-                (gesellschaft, model),
-            )
-            return [
-                EmbeddingRecord(
-                    objekt_typ=r[0],
-                    objekt_id=r[1],
-                    gesellschaft_id=r[2],
-                    steuerarten=r[3] or [],
-                    normen=r[4] or [],
-                    jahre=None if r[5] is None else (r[5], None if r[7] else r[6]),
-                    offen=r[8],
-                    modell=r[9],
-                    vektor=r[10],
-                    text_basis=r[11],
-                )
-                for r in await cur.fetchall()
-            ]
+            cur = await conn.execute(_EMBEDDINGS + " AND modell = %s", (gesellschaft, model))
+            return [_embedding_record(r) for r in await cur.fetchall()]
 
     async def begin_step(self, company_id: str, step: str, timeout_s: float) -> None:
         async with await self._connection() as conn:
@@ -629,6 +674,156 @@ class PostgresRepository(Repository):
             )
             (used,) = await cur.fetchone()
             return used
+
+    # Steps 11 to 15: laws and screening -------------------------------------------------
+
+    async def list_norm_codes(self) -> set[str]:
+        async with await self._connection() as conn:
+            cur = await conn.execute("SELECT to_regclass('profil.norm') IS NOT NULL")
+            (has_norm,) = await cur.fetchone()
+            if not has_norm:
+                return set()
+            cur = await conn.execute("SELECT code FROM profil.norm")
+            return {row[0] for row in await cur.fetchall()}
+
+    async def find_law(self, content_hash: str) -> Law | None:
+        return next((x for x in await self.list_laws() if x.content_hash == content_hash), None)
+
+    async def save_law(self, law: Law, sections: list[LawSection], *, replace: bool) -> int:
+        async with await self._connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "SELECT id, title FROM screening.law WHERE content_hash = %s FOR UPDATE",
+                (law.content_hash,),
+            )
+            old = await cur.fetchone()
+            if old is not None and not replace:
+                raise DuplicateLawError(f"law '{old[1]}' (id {old[0]}) is already stored")
+            if old is not None:  # sections and matches go by cascade
+                await conn.execute("DELETE FROM screening.law WHERE id = %s", (old[0],))
+            cur = await conn.execute(
+                _INSERT_LAW,
+                (
+                    str(law.kind),
+                    law.title,
+                    law.reference,
+                    law.published_at,
+                    law.effective_at,
+                    str(law.status),
+                    law.legal_forms,
+                    list(law.tax_types),
+                    law.summary,
+                    law.change_summary,
+                    law.filename,
+                    law.content_hash,
+                ),
+            )
+            (law_id,) = await cur.fetchone()
+            async with conn.cursor() as cur:
+                await cur.executemany(
+                    _INSERT_SECTION,
+                    [
+                        (
+                            law_id,
+                            s.nr,
+                            s.section_ref,
+                            s.heading,
+                            s.page_from,
+                            s.page_to,
+                            s.text,
+                            s.norms,
+                            s.tax_types,
+                            s.model,
+                            s.vector,
+                        )
+                        for s in sections
+                    ],
+                )
+            return law_id
+
+    async def list_laws(self) -> list[Law]:
+        async with await self._connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT l.*, (SELECT count(*) FROM screening.law_section s "
+                "WHERE s.law_id = l.id) AS sections FROM screening.law l ORDER BY l.id"
+            )
+            return [Law.model_validate(row) for row in await cur.fetchall()]
+
+    async def list_law_sections(self, law_id: int | None = None) -> list[LawSection]:
+        async with await self._connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT * FROM screening.law_section WHERE %(l)s::bigint IS NULL "
+                "OR law_id = %(l)s ORDER BY law_id, nr",
+                {"l": law_id},
+            )
+            return [LawSection.model_validate(row) for row in await cur.fetchall()]
+
+    async def update_law_change_summary(self, law_id: int, change_summary: str | None) -> None:
+        async with await self._connection() as conn:
+            cur = await conn.execute(
+                "UPDATE screening.law SET change_summary = %s WHERE id = %s",
+                (change_summary, law_id),
+            )
+            if cur.rowcount != 1:
+                raise RepositoryError(f"no law with id {law_id}")
+
+    async def company_features(self, company_id: str) -> CompanyFeatures:
+        async with await self._connection() as conn:
+            gesellschaft = await _target_company(conn, company_id)
+            cur = await conn.execute(
+                "SELECT rechtsform FROM profil.gesellschaft WHERE id = %s", (gesellschaft,)
+            )
+            (rechtsform,) = await cur.fetchone()
+            cur = await conn.execute(_EMBEDDINGS + " ORDER BY id", (gesellschaft,))
+            return CompanyFeatures(
+                company_id=company_id,
+                gesellschaft_id=gesellschaft,
+                rechtsform=rechtsform or None,
+                features=[_embedding_record(r) for r in await cur.fetchall()],
+            )
+
+    async def list_matches(self, company_id: str, only_hits: bool = False) -> list[Match]:
+        async with await self._connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT m.*, m.score::float8 AS score, s.section_ref, l.title AS law_title "
+                "FROM screening.match m JOIN screening.law_section s ON s.id = m.law_section_id "
+                "JOIN screening.law l ON l.id = m.law_id "
+                "WHERE m.company_id = %s AND (m.judge_relevant OR NOT %s) "
+                "ORDER BY m.judge_relevant DESC, m.score DESC, m.law_section_id",
+                (company_id, only_hits),
+            )
+            return [Match.model_validate(row) for row in await cur.fetchall()]
+
+    async def save_matches(self, matches: list[Match]) -> None:
+        if not matches:
+            return
+        rows = [
+            tuple(
+                str(v) if c in ("judge_direction", "trigger") and v is not None else v
+                for c, v in ((c, getattr(m, c)) for c in _MATCH_COLUMNS)
+            )
+            for m in matches
+        ]
+        async with await self._connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.executemany(_UPSERT_MATCH, rows)
+
+    async def pending_profile_changes(self, company_id: str) -> list[int]:
+        async with await self._connection() as conn:
+            cur = await conn.execute(
+                "SELECT id FROM pipeline.audit_log WHERE company_id = %s "
+                "AND kind = 'profile_changed' AND screened_at IS NULL ORDER BY id",
+                (company_id,),
+            )
+            return [row[0] for row in await cur.fetchall()]
+
+    async def mark_screened(self, entry_ids: list[int]) -> None:
+        if not entry_ids:
+            return
+        async with await self._connection() as conn:
+            await conn.execute(
+                "UPDATE pipeline.audit_log SET screened_at = now() "
+                "WHERE id = ANY(%s) AND screened_at IS NULL",
+                (entry_ids,),
+            )
 
     async def close(self) -> None:
         if self._opened:

@@ -5,7 +5,8 @@ state, runs of the upload layer) and the teammate's `profil` (backend/db_scheme)
 receives the published draft, the advisor's confirmation (step 8) and the feature vectors
 (step 9). Step 10 deletes the company's working rows in `pipeline` (including the per-file
 run progress) and clears the upload folder of its runs; `profil`, publications, the project
-state and the runs as history stay.
+state and the runs as history stay. Laws, their sections and the screening matches (steps 11
+to 15) live in schema `screening` and are never deleted by step 10.
 """
 
 from abc import ABC, abstractmethod
@@ -18,6 +19,8 @@ from app.config import Settings
 from app.models.audit import AuditEntry, AuditFilter
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import EmbeddingRecord, ProfileSnapshot
+from app.models.law import Law, LawSection
+from app.models.match import CompanyFeatures, Match
 from app.models.profile import ProfileDraft
 from app.models.project import Confirmation, ProjectStatus
 from app.models.review import HintRow
@@ -62,6 +65,10 @@ class StaleProfileError(RepositoryError):
 
 class BusyError(RepositoryError):
     """Another step (confirm, embed, cleanup) of the same project is running."""
+
+
+class DuplicateLawError(RepositoryError):
+    """A law with the same file content is already stored (use --replace)."""
 
 
 class PublishReport(BaseModel):
@@ -243,6 +250,53 @@ class Repository(ABC):
     async def company_exists(self, company_id: str) -> bool:
         """Is the id used anywhere: project state, runs, working data, or a deal in profil
         (seeds and hand-made profiles included)? A new company id must not be."""
+
+    # Steps 11 to 15: laws and screening -------------------------------------------------
+
+    @abstractmethod
+    async def list_norm_codes(self) -> set[str]:
+        """Norm codes of the vocabulary (profil.norm); empty when the schema is missing."""
+
+    @abstractmethod
+    async def find_law(self, content_hash: str) -> Law | None: ...
+
+    @abstractmethod
+    async def save_law(self, law: Law, sections: list[LawSection], *, replace: bool) -> int:
+        """Write the law and all its sections in one transaction; returns the law id. A law
+        with the same content hash is refused (DuplicateLawError) unless `replace`, which
+        deletes it first (its sections and matches by cascade)."""
+
+    @abstractmethod
+    async def list_laws(self) -> list[Law]:
+        """Stored laws with their section count, oldest first."""
+
+    @abstractmethod
+    async def update_law_change_summary(self, law_id: int, change_summary: str | None) -> None:
+        """Refresh source-level UI text without replacing sections, vectors or matches."""
+
+    @abstractmethod
+    async def list_law_sections(self, law_id: int | None = None) -> list[LawSection]:
+        """Sections with vectors, of one law or of all."""
+
+    @abstractmethod
+    async def company_features(self, company_id: str) -> CompanyFeatures:
+        """The company's feature vectors (every model) and its legal form. Read-only."""
+
+    @abstractmethod
+    async def list_matches(self, company_id: str, only_hits: bool = False) -> list[Match]:
+        """Stored matches, hits first, then by score."""
+
+    @abstractmethod
+    async def save_matches(self, matches: list[Match]) -> None:
+        """Insert or replace matches (key: company and law section) in one transaction."""
+
+    @abstractmethod
+    async def pending_profile_changes(self, company_id: str) -> list[int]:
+        """Ids of profile_changed audit entries that matching has not re-screened yet."""
+
+    @abstractmethod
+    async def mark_screened(self, entry_ids: list[int]) -> None:
+        """Set `screened_at` on those audit entries (the only allowed audit update)."""
 
     async def initialize_profile_schema(
         self, sql_dir: Path, *, reset: bool = False, seed: bool = False

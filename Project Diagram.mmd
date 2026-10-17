@@ -52,9 +52,9 @@ flowchart TD
  
     %% Phase 4: Screening loop
     subgraph P4["4. Constant screening loop"]
-        NEWS["Take a law (prototype: one law PDF,<br/>parsed by our pipeline)"]
+        NEWS["Ingest a supplied legal-source PDF<br/>(prototype: BFH I R 1/23; no fetching)"]
         CHUNK["Split each law into sections<br/>and embed each section"]
-        FILTER{"Stage 1: rule filter<br/>legal form, industry, region, thresholds"}
+        FILTER{"Stage 1: rule filter<br/>legal form and tax-type overlap"}
         SIM{"Stage 2: max similarity over<br/>company features above threshold?"}
         JUDGE{"Stage 3: LLM judge<br/>really relevant? why?"}
         NEWS --> CHUNK --> FILTER

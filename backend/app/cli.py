@@ -12,6 +12,11 @@ Usage:
                            [--delete-path DIR ...]
   uv run python -m app.cli --profile | --audit [--kind KIND] [--person NAME] --company-id PROJECT
   uv run python -m app.cli --update changes.json --changed-by NAME --company-id PROJECT
+  uv run python -m app.cli --ingest-law FILE.pdf [--replace] [--screen-after-ingest]
+  uv run python -m app.cli --laws
+  uv run python -m app.cli --screen [--company-id P] [--law-id N] [--dry-run] [--force]
+  uv run python -m app.cli --screen-pending --company-id PROJECT
+  uv run python -m app.cli --matches --company-id PROJECT [--only-hits] [--json out.json]
 
 The company id is the deal's project name (profil.deal.projektname). --publish writes the
 draft into schema profil as unconfirmed rows, replacing an earlier publish of that project
@@ -25,6 +30,12 @@ feature; --cleanup deletes the working rows and the given upload paths (inside D
 needs the advisor. After confirmation --update applies a changes file (format:
 app/models/update.py UpdateRequest) and refreshes the affected vectors; --profile and
 --audit print the confirmed profile and the append-only audit log.
+
+Steps 11 to 15 (postgres only): --ingest-law parses, splits and embeds one law PDF into
+schema screening (the same file twice is refused, --replace replaces it); --screen runs the
+rule filter, the vector score and the LLM judge for one or every embedded company and
+stores the matches (--dry-run stops before the judge and stores nothing); --screen-pending
+re-screens a company after advisor updates; --matches lists the stored matches.
 
 Known limit: files written with --json or --markdown contain document text and are outside
 the pipeline's control; step 10 does not delete them.
@@ -55,9 +66,12 @@ from app.db.repository import (
 from app.ingest.pipeline import DocumentParser, RunSummary, summarize
 from app.llm import make_client
 from app.logging_setup import configure_logging
+from app.matching.score import MatchError
 from app.models.audit import AuditEntry, AuditFilter, AuditKind
 from app.models.document import DocStatus, Document
 from app.models.extraction import DocumentExtraction
+from app.models.law import IngestReport, Law
+from app.models.match import Match, ScreenReport
 from app.models.profile import FieldResult, FieldStatus, ProfileDraft
 from app.models.review import ConfirmRequest, ConfirmResult, ReviewView
 from app.models.update import ConfirmedProfile, UpdateRequest, UpdateResult
@@ -66,6 +80,8 @@ from app.profile.schema import ProfileSchema, SchemaError, load_profile_schema
 from app.services.cleanup import CleanupError, cleanup_project
 from app.services.confirm import confirm_profile, review_profile
 from app.services.embed import Embedder, EmbedError
+from app.services.law_ingest import IngestError, ingest_law
+from app.services.screen import Screener, ScreenError
 from app.services.update import read_profile, update_profile
 
 log = logging.getLogger("app.cli")
@@ -83,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings().model_copy(update=updates)
 
     db_setup = args.init_db or args.seed or args.reset_profil
+    if any(getattr(args, command) for command in SCREEN_COMMANDS):
+        return _run_screening(args, settings)
     if any(getattr(args, command) for command in STEP_COMMANDS):
         return _run_steps(args, settings)
     needs_folder = not (args.merge_only or (db_setup and not args.folder))
@@ -311,6 +329,146 @@ async def _steps(
         return 1
     finally:
         await repository.close()
+
+
+SCREEN_COMMANDS = ("ingest_law", "laws", "screen", "screen_pending", "matches")
+
+
+def _run_screening(args: argparse.Namespace, settings: Settings) -> int:
+    """Steps 11 to 15: laws, screening and matches. Database only."""
+    chosen = [c for c in SCREEN_COMMANDS if getattr(args, c)]
+    if len(chosen) > 1:
+        return _fail(f"choose one command at a time: {', '.join('--' + c for c in chosen)}")
+    command = chosen[0]
+    flag = "--" + command.replace("_", "-")
+    if settings.repository != "postgres":
+        return _fail(f"{flag} needs --repository postgres")
+    if (args.replace or args.screen_after_ingest) and not args.ingest_law:
+        return _fail("--replace and --screen-after-ingest need --ingest-law")
+    if (args.dry_run or args.force or args.law_id is not None) and not args.screen:
+        return _fail("--dry-run, --force and --law-id need --screen")
+    if (args.screen_pending or args.matches) and not args.company_id:
+        return _fail(f"{flag} needs --company-id")
+    needs_key = args.ingest_law or args.screen_pending or (args.screen and not args.dry_run)
+    if needs_key and settings.openai_api_key is None:
+        return _fail(f"{flag} needs OPENAI_API_KEY")
+    try:
+        repository = make_repository(settings)
+    except RepositoryError as exc:
+        return _fail(str(exc))
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
+    return asyncio.run(_screening(command, args, settings, repository), loop_factory=loop_factory)
+
+
+async def _screening(
+    command: str, args: argparse.Namespace, settings: Settings, repository: Repository
+) -> int:
+    client = make_client(settings)
+    screener = Screener(repository, settings, client)
+    try:
+        await repository.initialize()  # pipeline and screening tables, idempotent
+        match command:
+            case "ingest_law":
+                report = await ingest_law(
+                    Path(args.ingest_law), repository, settings, client, replace=args.replace
+                )
+                _print_ingest(report)
+                _write_json(args.json, {"ingest": report.model_dump(mode="json")})
+                if args.screen_after_ingest:
+                    _print_screen(await screener.screen(law_id=report.law_id))
+            case "laws":
+                laws = await repository.list_laws()
+                _print_laws(laws)
+                _write_json(args.json, {"laws": [law.model_dump(mode="json") for law in laws]})
+            case "screen":
+                reports = await screener.screen(
+                    args.company_id, args.law_id, dry_run=args.dry_run, force=args.force
+                )
+                _print_screen(reports)
+                payload = [r.model_dump(mode="json", exclude={"scored"}) for r in reports]
+                _write_json(args.json, {"screen": payload})
+            case "screen_pending":
+                _print_screen([await screener.screen_pending(args.company_id)])
+            case "matches":
+                matches = await repository.list_matches(args.company_id, args.only_hits)
+                _print_matches(args.company_id, matches)
+                _write_json(args.json, {"matches": [m.model_dump(mode="json") for m in matches]})
+        return 0
+    except (RepositoryError, IngestError, ScreenError, MatchError) as exc:
+        print(f"\nerror: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await repository.close()
+
+
+def _print_ingest(report: IngestReport) -> None:
+    replaced = " (replaced)" if report.replaced else ""
+    print(f"\nIngested law {report.law_id}{replaced}: {report.title}")
+    print(
+        f"  kind {report.kind}, status {report.status}, published {report.published_at or '-'}, "
+        f"effective {report.effective_at or '-'}"
+    )
+    print(f"  {report.sections} sections by {report.strategy}")
+    if report.summary:
+        print(f"  Zusammenfassung: {report.summary}")
+    if report.change_summary:
+        print(f"  Was ändert sich?: {report.change_summary}")
+    print(f"  norms found: {', '.join(report.norms_found) or 'none'}")
+    print(f"  norms not in the vocabulary: {', '.join(report.norms_unmatched) or 'none'}")
+    for dropped in report.dropped:
+        print(f"  dropped: {dropped}")
+    print(f"{report.headline()}; tokens in={report.input_tokens} out={report.output_tokens}")
+
+
+def _print_laws(laws: list[Law]) -> None:
+    print(f"\n{'ID':>4}  {'STATUS':<13}{'SECTIONS':>9}  {'INGESTED':<17} TITLE")
+    for law in laws:
+        when = f"{law.ingested_at:%Y-%m-%d %H:%M}" if law.ingested_at else "-"
+        print(f"{law.id:>4}  {law.status:<13}{law.sections:>9}  {when:<17} {law.title}")
+        if law.summary:
+            print(f"      Zusammenfassung: {law.summary}")
+        if law.change_summary:
+            print(f"      Was ändert sich?: {law.change_summary}")
+
+
+def _print_screen(reports: list[ScreenReport]) -> None:
+    for r in reports:
+        if r.status != "screened":
+            print(f"\n{r.company_id}: {r.status}: {r.message}")
+            continue
+        removed = ", ".join(f"{rule}={n}" for rule, n in r.removed.items())
+        mode = " (dry run, nothing stored)" if r.dry_run else ""
+        print(
+            f"\nScreening '{r.company_id}'{mode}: {r.features} features x {r.sections} sections; "
+            f"removed {removed}; pairs {r.pairs}"
+        )
+        if r.dry_run:
+            print(f"  {'SCORE':>6} {'NORM':<5}{'PASSED':<7}{'SECTION':<28}BEST FEATURE")
+            for s in r.scored:
+                print(
+                    f"  {s.score:>6.3f} {'yes' if s.norm_match else 'no':<5}"
+                    f"{'yes' if s.passed else 'no':<7}{s.section.section_ref[:27]:<28}"
+                    f"{s.features[0].feature.text_basis[:80]}"
+                )
+        else:
+            print(
+                f"  judged {r.judged}, skipped {r.skipped} (unchanged), hits {r.hits}; "
+                f"tokens in={r.input_tokens} out={r.output_tokens}"
+            )
+            if r.unjudged:
+                print(f"  unjudged (retried next screen): {', '.join(r.unjudged)}")
+        print(f"  {r.headline()}")
+
+
+def _print_matches(company_id: str, matches: list[Match]) -> None:
+    hits = sum(m.judge_relevant for m in matches)
+    print(f"\nMatches of '{company_id}': {len(matches)} stored, {hits} relevant")
+    for m in matches:
+        verdict = f"{m.judge_direction}" if m.judge_relevant else "not relevant"
+        norm = ", norm match" if m.norm_match else ""
+        print(f"  [{verdict}] {m.law_title}, {m.section_ref} (score {m.score:.3f}{norm})")
+        print(f"      feature {m.feature_ref}: {m.feature_text}")
+        print(f"      {m.judge_reason}")
 
 
 async def _embed(
@@ -662,6 +820,29 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     updates.add_argument("--kind", choices=[str(k) for k in AuditKind], help="--audit filter")
     updates.add_argument("--person", metavar="NAME", help="--audit filter: acting person")
+
+    screening = parser.add_argument_group("laws and screening (steps 11 to 15, postgres only)")
+    screening.add_argument("--ingest-law", metavar="FILE", help="parse, split and embed a law PDF")
+    screening.add_argument(
+        "--replace", action="store_true", help="--ingest-law: replace the same stored file"
+    )
+    screening.add_argument(
+        "--screen-after-ingest", action="store_true", help="--ingest-law: screen right after"
+    )
+    screening.add_argument("--laws", action="store_true", help="list the stored laws")
+    screening.add_argument(
+        "--screen", action="store_true", help="screen --company-id (or every company) vs laws"
+    )
+    screening.add_argument("--law-id", type=int, metavar="N", help="--screen: only this law")
+    screening.add_argument(
+        "--dry-run", action="store_true", help="--screen: stop before the judge, store nothing"
+    )
+    screening.add_argument("--force", action="store_true", help="--screen: re-judge everything")
+    screening.add_argument(
+        "--screen-pending", action="store_true", help="re-screen after advisor updates"
+    )
+    screening.add_argument("--matches", action="store_true", help="list matches of --company-id")
+    screening.add_argument("--only-hits", action="store_true", help="--matches: relevant only")
     return parser.parse_args(argv)
 
 

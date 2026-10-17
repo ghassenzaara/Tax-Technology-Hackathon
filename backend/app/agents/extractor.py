@@ -7,20 +7,19 @@ Code adds `source_doc`; the model only cites pages, so it cannot cite the wrong 
 """
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any
 
 from openai import AsyncOpenAI
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from app.agents.chunking import Chunk, chunk_document
 from app.agents.prompt import build_repair_message, build_system_prompt
 from app.agents.verify import page_errors, verify_value
 from app.config import Settings
-from app.llm import call_with_retry, token_usage
+from app.llm import InvalidOutput, call_with_retry, read_structured, token_usage
 from app.models.document import DocStatus, Document, Page, TokenUsage
 from app.models.extraction import Candidate, DocumentExtraction, ExtractionStatus
 from app.profile.schema import (
@@ -34,10 +33,6 @@ from app.profile.schema import (
 log = logging.getLogger(__name__)
 
 MISSING_KEY_WARNING = "extraction not run: OPENAI_API_KEY is not set"
-
-
-class InvalidOutput(Exception):
-    """The model output stayed invalid after the repair retry."""
 
 
 @dataclass
@@ -270,29 +265,8 @@ class Extractor:
 
         A result can be valid and still carry errors: citations of pages that do not exist.
         """
-        choices = getattr(response, "choices", None) or []
-        if not choices:
-            return None, None, ["empty response"]
-        choice, message = choices[0], choices[0].message
-        refusal = getattr(message, "refusal", None)
-        if refusal:
-            return None, None, [f"model refused: {refusal}"]
-        content = message.content
-        if getattr(choice, "finish_reason", None) == "length":
-            return content, None, ["output was cut off at the length limit"]
-        if not content or not content.strip():
-            return content, None, ["empty response"]
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError as exc:
-            return content, None, [f"not valid JSON: {exc}"]
-        try:
-            parsed = self.response_model.model_validate(data)
-        except ValidationError as exc:
-            errors = [
-                f"{'.'.join(str(part) for part in e['loc']) or '(root)'}: {e['msg']}"
-                for e in exc.errors()
-            ]
+        content, parsed, errors = read_structured(response, self.response_model)
+        if parsed is None:
             return content, None, errors
         entries = {name: getattr(parsed, name) for name in self.schema.names}
         return content, parsed, page_errors(entries, set(pages))
