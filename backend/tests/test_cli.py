@@ -155,6 +155,10 @@ def test_init_db_with_folder_but_no_extract_sets_up_tables(folder, keyed, monkey
 
 
 MOCK_FILES = Path(__file__).parents[1] / "mock_files"
+# The mock data room ships with the submission, not with the repository.
+requires_mock_files = pytest.mark.skipif(
+    not MOCK_FILES.is_dir(), reason="backend/mock_files is not present"
+)
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 CLASSES = {  # filename fragment -> klasse_code, like the agent would classify
     "Tax-DD-Report": "dd_report",
@@ -197,6 +201,7 @@ def profil_answer(kwargs, profil_schema) -> str:
 
 
 @pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL not set")
+@requires_mock_files
 def test_mock_data_room_end_to_end_with_publish(keyed, monkeypatch, profil_schema, capsys):
     """Real mock documents -> parse -> (fake) agents -> merge -> publish into schema profil."""
     project = f"test-e2e-{uuid.uuid4().hex[:8]}"
@@ -248,6 +253,7 @@ def fill_template(template: dict) -> dict:
 
 
 @pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL not set")
+@requires_mock_files
 def test_review_confirm_advance_end_to_end(keyed, monkeypatch, profil_schema, capsys, tmp_path):
     """Mock data room -> publish -> review -> confirm -> embed + cleanup through the CLI."""
     project = f"test-steps-{uuid.uuid4().hex[:8]}"

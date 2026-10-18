@@ -5,3 +5,21 @@ CLAUDE.md
 handout.md
 # Server secrets for compose.prod.yml
 /.env
+
+# Not part of the deployable repository (kept locally, untracked)
+# Mock data room: ships with the submission
+backend/mock_files/
+# Screening sources: only the PDFs and their README are needed; run reports stay local
+backend/mock_laws/*
+!backend/mock_laws/*.pdf
+!backend/mock_laws/README.md
+# Working notes, design references and duplicates
+/fix.md
+/UI Backend Readiness Review.md
+/BFH-Urteil-*.pdf
+/image.png
+frontend/image.png
+frontend/design/
+# Unused screening-loop prototype; screening/contract stays (tests validate against it)
+screening/*
+!screening/contract/

@@ -21,6 +21,7 @@ from tests.helpers import FakeClient
 from tests.profil_data import QUOTE, with_conflict
 from tests.test_api import assert_error
 from tests.test_api_workflow import api, model
+from tests.test_cli import requires_mock_files
 from tests.test_confirm import published
 from tests.test_laws import law_pdf
 from tests.test_outreach import FakeMail, hit
@@ -441,6 +442,7 @@ async def test_ui_multi_send_exact_snapshot_guards_and_resolution(
             assert ok(await http.get("/api/ui/email-template")) == template
 
 
+@requires_mock_files
 async def test_ui_profile_edit_and_document_update(
     settings, profil_schema, project, ui_repo, tmp_path
 ):
@@ -632,6 +634,7 @@ async def test_ui_auto_save_selects_conflicts_and_keeps_missing_editable(
         )
 
 
+@requires_mock_files
 async def test_ui_full_mock_room_upload(settings, profil_schema, ui_repo):
     from tests.test_api import EMBED_SENTENCE
     from tests.test_cli import MOCK_FILES, profil_answer

@@ -23,7 +23,7 @@ from app.profile.schema import load_profile_schema
 from tests.helpers import FakeClient
 from tests.profil_data import QUOTE
 from tests.test_api import EMBED_SENTENCE, agent, assert_error, finished, room, upload
-from tests.test_cli import MOCK_FILES, fill_template, profil_answer
+from tests.test_cli import MOCK_FILES, fill_template, profil_answer, requires_mock_files
 from tests.test_laws import METADATA, law_pdf
 from tests.test_outreach import FakeMail
 from tests.test_screen import feature, ready, verdict
@@ -417,6 +417,7 @@ def test_openapi_file_matches_the_app(settings, schema):
 
 
 @pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL not set")
+@requires_mock_files
 async def test_full_workflow_postgres(settings, tmp_path):
     """Upload DD documents, confirm, poll cleanup, ingest a legal PDF, screen, inspect
     alerts, edit and preview the template, send through log mode, read outreach and audit,

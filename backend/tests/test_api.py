@@ -19,7 +19,7 @@ from app.models.project import ProjectState
 from app.profile.schema import load_profile_schema
 from tests.helpers import SENTENCE, FakeClient, answer, entry, make_pdf
 from tests.profil_data import QUOTE, all_profile_text
-from tests.test_cli import MOCK_FILES, fill_template, profil_answer
+from tests.test_cli import MOCK_FILES, fill_template, profil_answer, requires_mock_files
 
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 LOOP = "app.api.__main__:selector_loop_factory"
@@ -326,6 +326,7 @@ async def test_restart_marks_runs_interrupted(settings, schema, tmp_path):
 
 
 @pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL not set")
+@requires_mock_files
 async def test_full_flow_postgres(settings, monkeypatch, tmp_path):
     """Mock PDFs through HTTP: upload, draft, confirm, embed and cleanup in the background,
     profile with citations and no quotes, update with stale and busy checks, audit."""
