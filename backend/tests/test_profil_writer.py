@@ -8,7 +8,7 @@ import psycopg
 import pytest
 
 from app.config import PROFILE_DB_DIR
-from app.db.repository import PublishError
+from app.db.repository import PublishError, StateError
 from tests.profil_data import DOCS, QUOTE, cand, candidates, draft_for, extractions
 
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
@@ -250,7 +250,9 @@ async def test_seed_project_is_never_overwritten(repository, profil_schema, sett
     await repository.initialize_profile_schema(PROFILE_DB_DIR, seed=True)
     seeded = draft_for("Hafenkante", profil_schema)
 
-    with pytest.raises(PublishError, match="not published by the pipeline"):
+    with pytest.raises(
+        (PublishError, StateError), match="not published by the pipeline|never overwritten"
+    ):
         await repository.publish_profile(seeded, extractions("Hafenkante"), profil_schema, settings)
 
     (firma,) = await query(

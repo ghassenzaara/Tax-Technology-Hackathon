@@ -1,3 +1,5 @@
+import { valueLabel } from './valueLabels'
+
 // Display formatting only. Values stay plain JSON; formatted strings are never parsed back.
 
 const numberFormat = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 6 })
@@ -34,19 +36,24 @@ export function isEmptyValue(value: unknown): boolean {
   return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
 }
 
-/** One line of text for any scalar. Structured values fall back to compact JSON. */
+/** One line of readable text; structured displays use FactValue instead. */
 export function formatScalar(value: unknown, type?: string, unit?: string, key?: string): string {
   if (isEmptyValue(value)) return ''
   if (typeof value === 'boolean') return value ? 'Ja' : 'Nein'
   if (typeof value === 'number') return formatNumber(value, unit, key)
   if (typeof value === 'string') {
     if (type === 'date' || ISO_DATE.test(value)) return formatDate(value)
-    return unit && (type === 'string' || type === 'enum') ? `${value} ${unit}` : value
+    const text = valueLabel(value)
+    return unit && (type === 'string' || type === 'enum') ? `${text} ${unit}` : text
   }
   if (Array.isArray(value) && value.every((v) => typeof v !== 'object' || v === null)) {
-    return value.map((v) => formatScalar(v)).join(', ')
+    return value.map((v) => formatScalar(v, undefined, undefined, key)).join(', ')
   }
-  return JSON.stringify(value)
+  if (Array.isArray(value)) return value.map((v) => formatScalar(v)).join('; ')
+  if (isPlainObject(value)) return Object.entries(value)
+    .filter(([, v]) => !isEmptyValue(v))
+    .map(([k, v]) => `${k}: ${formatScalar(v, undefined, undefined, k)}`).join(' · ')
+  return String(value)
 }
 
 export function formatPercent(fraction: number): string {

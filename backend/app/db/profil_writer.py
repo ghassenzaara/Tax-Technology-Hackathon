@@ -41,13 +41,40 @@ from app.models.profile import (
 )
 from app.models.project import Confirmation, ProjectState
 from app.models.review import FieldError
+from app.models.update import ADVISOR_SOURCE
 from app.profile.merge import WEAKEST_RANK, document_ranks
+from app.profile.reconcile import reconciliation_history
 from app.profile.review import DecisionError, sources_text
 from app.profile.schema import FieldSpec, ProfileSchema
 
 SCHEMA = "profil"
 _DOC_NO = re.compile(r"^(\d+)")
-ADVISOR_SOURCE = "Vom Steuerberater eingegeben"  # fundstelle of a typed value (no document)
+
+
+async def delete_project_rows(cur: psycopg.AsyncCursor, deal: int) -> None:
+    """Delete a published project's rows (republish, discard of an unconfirmed upload).
+    From the leaves up, because several foreign keys (quelle_dok, finding_id, the
+    grundstueck and organschaft links) have no ON DELETE CASCADE. The caller checks that
+    the pipeline published the project (never a seed)."""
+    await cur.execute(f"SELECT id FROM {SCHEMA}.gesellschaft WHERE deal_id = %s", (deal,))
+    ids = [r[0] for r in await cur.fetchall()]
+    for sql, params in (
+        ("DELETE FROM {s}.alert WHERE gesellschaft_id = ANY(%s)", (ids,)),
+        (
+            "DELETE FROM {s}.grundstueck WHERE eigentuemer_id = ANY(%s) OR nutzer_id = ANY(%s)",
+            (ids, ids),
+        ),
+        (
+            "DELETE FROM {s}.organschaft WHERE organgesellschaft_id = ANY(%s) "
+            "OR organtraeger_id = ANY(%s)",
+            (ids, ids),
+        ),
+        ("DELETE FROM {s}.spa_absicherung WHERE deal_id = %s", (deal,)),
+        ("DELETE FROM {s}.finding WHERE deal_id = %s", (deal,)),
+        ("DELETE FROM {s}.gesellschaft WHERE deal_id = %s", (deal,)),  # cascades facts
+        ("DELETE FROM {s}.deal WHERE id = %s", (deal,)),  # cascades dokument
+    ):
+        await cur.execute(sql.format(s=SCHEMA), params)
 
 
 class ProfilWriter:
@@ -200,6 +227,7 @@ class ProfilWriter:
                 new_value={
                     "draft_version": self.confirmation.draft_version,
                     "counts": self.confirmation.counts,
+                    "reconciliations": reconciliation_history(self.draft),
                     "rows": self.report.rows,
                     "hints_closed": self.report.hints_closed,
                 },
@@ -230,27 +258,7 @@ class ProfilWriter:
                     f"project '{self.draft.company_id}' already exists in {SCHEMA} and was not "
                     "published by the pipeline (for example a seed); use another --company-id"
                 )
-            deal = row[0]
-            await cur.execute(f"SELECT id FROM {SCHEMA}.gesellschaft WHERE deal_id = %s", (deal,))
-            ids = [r[0] for r in await cur.fetchall()]
-            for sql, params in (
-                ("DELETE FROM {s}.alert WHERE gesellschaft_id = ANY(%s)", (ids,)),
-                (
-                    "DELETE FROM {s}.grundstueck WHERE eigentuemer_id = ANY(%s) "
-                    "OR nutzer_id = ANY(%s)",
-                    (ids, ids),
-                ),
-                (
-                    "DELETE FROM {s}.organschaft WHERE organgesellschaft_id = ANY(%s) "
-                    "OR organtraeger_id = ANY(%s)",
-                    (ids, ids),
-                ),
-                ("DELETE FROM {s}.spa_absicherung WHERE deal_id = %s", (deal,)),
-                ("DELETE FROM {s}.finding WHERE deal_id = %s", (deal,)),
-                ("DELETE FROM {s}.gesellschaft WHERE deal_id = %s", (deal,)),  # cascades facts
-                ("DELETE FROM {s}.deal WHERE id = %s", (deal,)),  # cascades dokument
-            ):
-                await cur.execute(sql.format(s=SCHEMA), params)
+            await delete_project_rows(cur, row[0])
 
     # Deal, documents, target company -------------------------------------------------
 

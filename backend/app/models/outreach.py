@@ -15,22 +15,26 @@ class EmailTemplate(BaseModel):
     updated_at: datetime
 
 
+PLACEHOLDER_GREETING = "{Anrede}"  # filled from the client contact (salutation and name)
+PLACEHOLDER_SIGNATURE = "{Signatur}"  # filled from the advisor (name, title, firm)
+PLACEHOLDERS = (PLACEHOLDER_GREETING, PLACEHOLDER_SIGNATURE)
+
+DEFAULT_SUBJECT = "Gesprächsangebot zu aktuellen regulatorischen Entwicklungen"
+DEFAULT_BODY = (
+    "{Anrede},\n\n"
+    "wir verfolgen für unsere Mandanten laufend die aktuellen regulatorischen Entwicklungen. "
+    "Dabei sind uns Änderungen aufgefallen, die für Ihr Unternehmen von Bedeutung sein "
+    "könnten.\n\n"
+    "Gerne besprechen wir mit Ihnen in einem persönlichen Gespräch, ob und wie Ihr "
+    "Unternehmen betroffen ist. Bitte teilen Sie uns mit, wann ein Termin für Sie passt.\n\n"
+    "Mit freundlichen Grüßen\n{Signatur}"
+)
+
+
 def default_template(settings: Settings, now: datetime) -> EmailTemplate:
-    # TODO: advisor to review the proposed text, name and firm.
-    return EmailTemplate(
-        subject="Aktuelle Entwicklung im Steuerrecht – Austausch zu Ihrer Situation",
-        body=(
-            "Sehr geehrte Damen und Herren,\n\n"
-            "im Rahmen unserer laufenden Beobachtung des Steuerrechts ist uns eine aktuelle "
-            "Entwicklung aufgefallen, die für Ihr Unternehmen von Bedeutung sein kann. Gern "
-            "ordnen wir diese für Sie ein und besprechen mögliche Risiken und "
-            "Gestaltungsmöglichkeiten.\n\n"
-            "Wir schlagen ein kurzes Telefonat in den nächsten Tagen vor. Antworten Sie uns "
-            "einfach auf diese E-Mail oder rufen Sie uns an.\n\n"
-            f"Mit freundlichen Grüßen\n{settings.sender_name}\n{settings.sender_firm}"
-        ),
-        updated_at=now,
-    )
+    """The frontend's text with placeholders; stored only in a new database or on reset."""
+    # TODO: advisor to review the text.
+    return EmailTemplate(subject=DEFAULT_SUBJECT, body=DEFAULT_BODY, updated_at=now)
 
 
 class EmailPreview(BaseModel):
@@ -59,7 +63,8 @@ class SendRequest(BaseModel):
 
 class Outreach(BaseModel):
     id: int = 0
-    alert_id: int
+    alert_id: int | None  # None: one email for several laws (UI send, see law_ids)
+    law_ids: list[int] = []  # UI send: the laws the email covers
     company_id: str
     recipient: str
     delivered_to: str

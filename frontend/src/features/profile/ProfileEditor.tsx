@@ -9,6 +9,7 @@ import { ConfirmDialog, Dialog } from '../../components/ui/Dialog'
 import { Field, Input, Select, inputClass } from '../../components/ui/Field'
 import { ErrorState } from '../../components/ui/States'
 import { cn } from '../../lib/cn'
+import { valueLabel } from '../../lib/valueLabels'
 import { FactValue } from './FactValue'
 import { groupFacts } from './StammdatenCard'
 import { fromDraft, sameValue, toDraft, type FactDraft } from './factDraft'
@@ -42,8 +43,6 @@ function coreDraftOf(c: Company): CoreDraft {
 }
 
 const FORM_ID = 'profile-editor-form'
-
-const opt = (s: string) => (s.trim() === '' ? undefined : s.trim())
 
 export function ProfileEditor({ company, open, onClose }: { company: Company; open: boolean; onClose: () => void }) {
   return (
@@ -84,21 +83,20 @@ function EditorBody({ company, onClose }: { company: Company; onClose: () => voi
   function buildUpdate(): CompanyUpdate | null {
     const errs: Record<string, string> = {}
     if (!core.name.trim()) errs.name = 'Bitte einen Namen angeben.'
-    if (!core.contactName.trim()) errs.contactName = 'Bitte einen Ansprechpartner angeben.'
     if (core.email.trim() && !EMAIL_PATTERN.test(core.email.trim())) errs.email = 'Die E-Mail Adresse ist ungültig.'
 
     const corePatch: CompanyCorePatch = {}
     const next = {
       name: core.name.trim(),
-      legalForm: opt(core.legalForm),
-      industry: opt(core.industry),
-      customerNumber: opt(core.customerNumber),
-      clientSince: opt(core.clientSince),
+      legalForm: core.legalForm.trim(),
+      industry: core.industry.trim(),
+      customerNumber: core.customerNumber.trim(),
+      clientSince: core.clientSince.trim(),
     }
     for (const [k, v] of Object.entries(next) as [keyof typeof next, string | undefined][]) {
       if (!sameValue(company[k], v)) corePatch[k] = v as never
     }
-    const contact = { salutation: opt(core.salutation), name: core.contactName.trim(), email: opt(core.email), phone: opt(core.phone) }
+    const contact = { salutation: core.salutation.trim(), name: core.contactName.trim(), email: core.email.trim(), phone: core.phone.trim() }
     const cleanContact = Object.fromEntries(
       Object.entries(contact).filter(([, v]) => v !== undefined),
     ) as unknown as Company['contact']
@@ -113,7 +111,7 @@ function EditorBody({ company, onClose }: { company: Company; onClose: () => voi
 
     setErrors(errs)
     if (Object.keys(errs).length > 0) return null
-    return { core: corePatch, facts }
+    return { core: corePatch, facts, profileVersion: typeof company.extra?.profileVersion === 'number' ? company.extra.profileVersion : undefined }
   }
 
   function onSave(e: FormEvent) {
@@ -246,7 +244,7 @@ export function FactEditor({
               <Select {...p} value={draft.text} onChange={(e) => onChange({ ...draft, text: e.target.value })}>
                 <option value="">Nicht angegeben</option>
                 {draft.options.map((o) => (
-                  <option key={o} value={o}>{o}</option>
+                  <option key={o} value={o}>{valueLabel(o)}</option>
                 ))}
               </Select>
             )

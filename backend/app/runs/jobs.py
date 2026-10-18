@@ -18,6 +18,7 @@ import logging
 import shutil
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -26,7 +27,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from app.config import Settings
-from app.db.repository import BusyError, NotFoundError, Repository, StateError
+from app.db.repository import BusyError, DuplicateLawError, NotFoundError, Repository, StateError
 from app.models.job import Job, JobOperation, JobStatus, JobView
 from app.models.project import ProjectState
 from app.profile.schema import ProfileSchema
@@ -83,6 +84,7 @@ class JobManager:
             JobOperation.SCREEN: self._screen,
             JobOperation.ADVANCE: self._advance,
             JobOperation.REFRESH: self._refresh,
+            JobOperation.SCREENING_RUN: self._screening_run,
         }
 
     async def startup(self) -> None:
@@ -186,6 +188,13 @@ class JobManager:
         busy = await self.repository.company_busy(company_id, self.settings.step_lock_timeout_s)
         if busy:
             return Recovery(reason=f"busy: {busy}", busy=busy)
+        runs = await self.repository.list_runs(company_id)
+        if (
+            runs
+            and runs[0].started_by == "update_dd"
+            and await self.repository.get_profile_draft(company_id)
+        ):
+            return Recovery(reason="new documents await advisor review")
         if state.state is ProjectState.PUBLISHED:
             return Recovery(reason="not confirmed yet; use rerun to process the documents again")
         if state.state is ProjectState.CONFIRMED:
@@ -259,6 +268,13 @@ class JobManager:
         if state is None or state.state is ProjectState.PUBLISHED:
             current = state.state if state else "not published"
             raise StateError(f"project '{cid}' is {current}: nothing to advance before confirm")
+        runs = await self.repository.list_runs(cid)
+        if (
+            runs
+            and runs[0].started_by == "update_dd"
+            and await self.repository.get_profile_draft(cid)
+        ):
+            raise StateError("new documents await advisor review before cleanup")
         if state.state is ProjectState.CONFIRMED or state.embeddings_stale:
             if self.client is None:
                 await self.repository.record_error(
@@ -328,6 +344,42 @@ class JobManager:
         )
         summaries = [r.summary() for r in reports]
         return {"reports": summaries, "complete": all(r.complete for r in reports)}
+
+    async def _screening_run(self, job: Job) -> dict[str, Any]:
+        self.require_llm()
+        source = self.settings.law_source_dir
+        if not source.is_dir():
+            raise StateError("the configured law source folder does not exist")
+        new_ids = []
+        for path in sorted(source.rglob("*")):
+            if not path.is_file() or path.suffix.lower() != ".pdf":
+                continue
+            digest = sha256(await asyncio.to_thread(path.read_bytes)).hexdigest()
+            if await self.repository.find_law(digest):
+                continue
+            try:
+                report = await ingest_law(path, self.repository, self.settings, self.client)
+            except DuplicateLawError:
+                continue  # another API ingestion stored the same source concurrently
+            new_ids.append(str(report.law_id))
+        eligible = {
+            s.company_id
+            for s in await self.repository.list_project_states()
+            if s.state in {ProjectState.EMBEDDED, ProjectState.CLEANED}
+        }
+        reports = await Screener(self.repository, self.settings, self.client).screen()
+        unfinished = sum(
+            r.company_id in eligible and r.status in {"failed", "refused"} for r in reports
+        )
+        return {
+            "newLawChangeIds": new_ids,
+            "lawChanges": len(new_ids),
+            "companiesScreened": sum(r.status in {"screened", "nothing_to_do"} for r in reports),
+            "affectedCompanyIds": [r.company_id for r in reports if r.hits],
+            "hits": sum(r.hits for r in reports),
+            "deferred": sum(len(r.deferred) + len(r.unjudged) for r in reports) + unfinished,
+            "complete": not unfinished and all(r.complete for r in reports),
+        }
 
     async def _ingest(self, job: Job) -> dict[str, Any]:
         """Ingest the stored upload; its folder is removed only after success, so a failed

@@ -21,7 +21,8 @@ from app.config import Settings
 from app.db.audit import read_audit, write_audit
 from app.db.profil_reader import load_snapshot, target_company
 from app.db.profil_updater import read_profile, update_profile
-from app.db.profil_writer import publish_profile
+from app.db.profil_writer import delete_project_rows, publish_profile
+from app.db.profile_sources import remove_profile_sources
 from app.db.repository import (
     WORKING_TABLES,
     BusyError,
@@ -30,11 +31,15 @@ from app.db.repository import (
     PublishReport,
     Repository,
     RepositoryError,
+    RunActiveError,
+    SendPendingError,
     StaleDraftError,
+    StaleProfileError,
     StateError,
 )
 from app.models.alert import SENDABLE, Alert, AlertStatus
 from app.models.audit import AuditEntry, AuditFilter, AuditKind
+from app.models.client import ClientInfo, MatchReview, MultiSendRequest
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import EmbeddingRecord, ProfileSnapshot
 from app.models.job import Job
@@ -192,6 +197,17 @@ def _alert(row: dict) -> Alert:
     return Alert.model_validate(source | row)
 
 
+_CLIENT_COLUMNS = (
+    "company_id",
+    "customer_number",
+    "client_since",
+    "notes",
+    "contact_salutation",
+    "contact_name",
+    "contact_phone",
+    "citations",
+)
+
 _JOB_COLUMNS = (
     "id",
     "operation",
@@ -239,6 +255,15 @@ async def _busy(conn: psycopg.AsyncConnection, company_id: str, timeout_s: float
     )
     step = await cur.fetchone()
     return f"{step[0]} is running" if step else None
+
+
+async def _lock_mail_company(conn: psycopg.AsyncConnection, company_id: str) -> None:
+    # Works for legacy alerts with no project state too. All send/review mutations take
+    # this lock before state, reviews and alerts, preventing cross-API reservation races.
+    await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (company_id,))
+    await conn.execute(
+        "SELECT 1 FROM pipeline.project_state WHERE company_id = %s FOR UPDATE", (company_id,)
+    )
 
 
 async def _sync_alert(cur: psycopg.AsyncCursor, match_id: int, match: Match) -> None:
@@ -656,6 +681,53 @@ class PostgresRepository(Repository):
         async with await self._connection() as conn, conn.transaction():
             return await update_profile(conn, request, schema, settings, today)
 
+    async def apply_ui_update(
+        self, company_id, version, request, info_patch, audit, schema, settings, today
+    ):
+        async with await self._connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "SELECT state, profile_version FROM pipeline.project_state "
+                "WHERE company_id = %s FOR UPDATE",
+                (company_id,),
+            )
+            state = await cur.fetchone()
+            if state is None or state[0] not in EMBEDDABLE:
+                raise StateError("profile is not confirmed")
+            if state[1] != version:
+                raise StaleProfileError("profile version is stale; reload the profile")
+            busy = await _busy(conn, company_id, settings.step_lock_timeout_s)
+            if busy:
+                raise BusyError(busy)
+            result = (
+                await update_profile(conn, request, schema, settings, today) if request else None
+            )
+            if info_patch:
+                columns = [
+                    c
+                    for c in _CLIENT_COLUMNS
+                    if c in info_patch and c not in {"company_id", "citations"}
+                ]
+                await conn.execute(
+                    "INSERT INTO pipeline.client_info(company_id) VALUES (%s) "
+                    "ON CONFLICT (company_id) DO NOTHING",
+                    (company_id,),
+                )
+                await conn.execute(
+                    "UPDATE pipeline.client_info SET "
+                    + ", ".join(f"{c} = %s" for c in columns)
+                    + ", updated_at = now() WHERE company_id = %s",
+                    (*[info_patch[c] for c in columns], company_id),
+                )
+                for entry in audit:
+                    await write_audit(conn, entry)
+                if request is None:
+                    await conn.execute(
+                        "UPDATE pipeline.project_state SET profile_version = profile_version + 1, "
+                        "updated_at = now() WHERE company_id = %s",
+                        (company_id,),
+                    )
+            return result
+
     async def read_profile(
         self, company_id: str, schema: ProfileSchema, settings: Settings
     ) -> ConfirmedProfile:
@@ -665,6 +737,10 @@ class PostgresRepository(Repository):
     async def list_audit(self, audit_filter: AuditFilter) -> list[AuditEntry]:
         async with await self._connection() as conn:
             return await read_audit(conn, audit_filter)
+
+    async def remove_profile_sources(self, company_id: str) -> None:
+        async with await self._connection() as conn, conn.transaction():
+            await remove_profile_sources(conn, company_id)
 
     async def delete_working_data(self, company_id: str) -> dict[str, int]:
         deleted = {}
@@ -1098,7 +1174,7 @@ class PostgresRepository(Repository):
                 raise RepositoryError("email template missing; run --init-db")
             return EmailTemplate.model_validate(row)
 
-    async def edit_template(self, subject: str, body: str) -> EmailTemplate:
+    async def edit_template(self, subject: str, body: str, *, reset: bool = False) -> EmailTemplate:
         async with await self._connection() as conn, conn.transaction():
             cur = await conn.execute(
                 "SELECT subject, body FROM screening.email_template WHERE id = 1 FOR UPDATE"
@@ -1117,7 +1193,8 @@ class PostgresRepository(Repository):
                     kind=AuditKind.TEMPLATE_EDITED,
                     acted_by=self.settings.advisor_label,
                     old_value={"subject": old[0], "body": old[1]},
-                    new_value={"subject": subject, "body": body},
+                    new_value={"subject": subject, "body": body}
+                    | ({"reset": True} if reset else {}),
                 ),
             )
         return await self.get_template()
@@ -1126,6 +1203,23 @@ class PostgresRepository(Repository):
         from app.services.alerts import require_sendable
 
         async with await self._connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "SELECT company_id FROM screening.alert WHERE id = %s", (request.alert_id,)
+            )
+            found = await cur.fetchone()
+            if found is None:
+                raise NotFoundError(f"no alert with id {request.alert_id}")
+            await _lock_mail_company(conn, found[0])
+            cur = await conn.execute(
+                "SELECT id FROM screening.outreach WHERE company_id = %s "
+                "AND status = 'pending' LIMIT 1",
+                (found[0],),
+            )
+            pending = await cur.fetchone()
+            if pending:
+                raise SendPendingError(
+                    "Vorheriger Versand unklar; bitte zuerst auflösen.", pending[0]
+                )
             cur = await conn.execute(
                 "SELECT id FROM screening.alert WHERE id = %s FOR UPDATE", (request.alert_id,)
             )
@@ -1171,14 +1265,29 @@ class PostgresRepository(Repository):
         self, outreach_id, status, *, message_id=None, error=None
     ) -> Outreach:
         async with await self._connection() as conn, conn.transaction():
-            # Alert first, same ordering as reserve/status actions, to avoid deadlocks.
             cur = await conn.execute(
-                "SELECT a.id FROM screening.alert a JOIN screening.outreach o ON o.alert_id = a.id "
-                "WHERE o.id = %s FOR UPDATE OF a",
+                "SELECT alert_id, company_id, law_ids FROM screening.outreach WHERE id = %s",
                 (outreach_id,),
             )
-            if await cur.fetchone() is None:
+            found = await cur.fetchone()
+            if found is None:
                 raise NotFoundError(f"no outreach with id {outreach_id}")
+            alert_id, company_id, law_ids = found
+            await _lock_mail_company(conn, company_id)
+            if alert_id is not None:
+                # Alert first, same ordering as reserve/status actions, to avoid deadlocks.
+                cur = await conn.execute(
+                    "SELECT (source_snapshot->'law'->>'id')::bigint FROM screening.alert "
+                    "WHERE id = %s FOR UPDATE",
+                    (alert_id,),
+                )
+                law_ids = [(await cur.fetchone())[0]]
+            else:  # one email for several laws: the reviews first, as in the reservation
+                await conn.execute(
+                    "SELECT 1 FROM screening.match_review WHERE company_id = %s "
+                    "AND law_id = ANY(%s) ORDER BY law_id FOR UPDATE",
+                    (company_id, law_ids),
+                )
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     "SELECT * FROM screening.outreach WHERE id = %s FOR UPDATE", (outreach_id,)
@@ -1193,11 +1302,35 @@ class PostgresRepository(Repository):
                     (status, error, message_id, status, outreach_id),
                 )
                 result = Outreach.model_validate(await cur.fetchone())
+            await conn.execute(
+                "UPDATE screening.match_review SET pending_outreach_id = NULL "
+                "WHERE pending_outreach_id = %s",
+                (outreach_id,),
+            )
             if status == "sent":
+                if alert_id is not None:
+                    await conn.execute(
+                        "UPDATE screening.alert SET status = 'actioned', "
+                        "status_changed_at = now() WHERE id = %s",
+                        (alert_id,),
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE screening.alert SET status = 'actioned', "
+                        "status_changed_at = now() WHERE company_id = %s "
+                        "AND (source_snapshot->'law'->>'id')::bigint = ANY(%s) "
+                        "AND status IN ('new', 'seen')",
+                        (company_id, law_ids),
+                    )
+                # The advisor's review follows every send from the app.
                 await conn.execute(
-                    "UPDATE screening.alert SET status = 'actioned', status_changed_at = now() "
-                    "WHERE id = %s",
-                    (row.alert_id,),
+                    "INSERT INTO screening.match_review (company_id, law_id, email_status, "
+                    "sent_at, outreach_id, updated_at) "
+                    "SELECT %s, l.id, 'sent', now(), %s, now() FROM screening.law l "
+                    "WHERE l.id = ANY(%s) "
+                    "ON CONFLICT (company_id, law_id) DO UPDATE SET email_status = 'sent', "
+                    "sent_at = now(), outreach_id = EXCLUDED.outreach_id, updated_at = now()",
+                    (company_id, outreach_id, law_ids),
                 )
                 await write_audit(
                     conn,
@@ -1219,6 +1352,251 @@ class PostgresRepository(Repository):
                 {"c": company_id, "a": alert_id},
             )
             return [Outreach.model_validate(row) for row in await cur.fetchall()]
+
+    # UI contract layer -------------------------------------------------------------------
+
+    async def merkmal_names(self) -> dict[str, str]:
+        async with await self._connection() as conn:
+            cur = await conn.execute("SELECT code, bezeichnung FROM profil.merkmal_def")
+            return dict(await cur.fetchall())
+
+    async def get_client_info(self, company_id: str) -> ClientInfo | None:
+        async with await self._connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT * FROM pipeline.client_info WHERE company_id = %s", (company_id,)
+            )
+            row = await cur.fetchone()
+            return ClientInfo.model_validate(row) if row else None
+
+    async def save_client_info(self, info: ClientInfo, audit: list[AuditEntry] = ()) -> ClientInfo:
+        values = info.model_dump(include=set(_CLIENT_COLUMNS))
+        values["citations"] = Jsonb(values["citations"])
+        async with await self._connection() as conn, conn.transaction():
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    f"INSERT INTO pipeline.client_info ({', '.join(_CLIENT_COLUMNS)}) "
+                    f"VALUES ({', '.join(f'%({c})s' for c in _CLIENT_COLUMNS)}) "
+                    "ON CONFLICT (company_id) DO UPDATE SET "
+                    + ", ".join(f"{c} = EXCLUDED.{c}" for c in _CLIENT_COLUMNS[1:])
+                    + ", updated_at = now() RETURNING *",
+                    values,
+                )
+                stored = ClientInfo.model_validate(await cur.fetchone())
+            for entry in audit:
+                await write_audit(conn, entry)
+        return stored
+
+    async def save_client_note(self, company_id, notes, actor):
+        async with await self._connection() as conn, conn.transaction():
+            await conn.execute(
+                "INSERT INTO pipeline.client_info(company_id) VALUES (%s) "
+                "ON CONFLICT (company_id) DO NOTHING",
+                (company_id,),
+            )
+            cur = await conn.execute(
+                "SELECT notes FROM pipeline.client_info WHERE company_id = %s FOR UPDATE",
+                (company_id,),
+            )
+            old = (await cur.fetchone())[0] or ""
+            if old != notes:
+                await conn.execute(
+                    "UPDATE pipeline.client_info SET notes = %s, updated_at = now() "
+                    "WHERE company_id = %s",
+                    (notes, company_id),
+                )
+                await write_audit(
+                    conn,
+                    AuditEntry(
+                        company_id=company_id,
+                        kind=AuditKind.NOTE_CHANGED,
+                        acted_by=actor,
+                        field="notes",
+                        old_value=old,
+                        new_value=notes,
+                        screened_at=datetime.now(UTC),
+                    ),
+                )
+
+    async def append_audit(self, entry: AuditEntry) -> None:
+        async with await self._connection() as conn, conn.transaction():
+            await write_audit(conn, entry)
+
+    async def list_match_reviews(
+        self, company_id: str | None = None, law_id: int | None = None
+    ) -> list[MatchReview]:
+        async with await self._connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT * FROM screening.match_review "
+                "WHERE (%(c)s::text IS NULL OR company_id = %(c)s) "
+                "AND (%(l)s::bigint IS NULL OR law_id = %(l)s) ORDER BY company_id, law_id",
+                {"c": company_id, "l": law_id},
+            )
+            return [MatchReview.model_validate(row) for row in await cur.fetchall()]
+
+    async def save_match_review(
+        self, review: MatchReview, audit: list[AuditEntry] = ()
+    ) -> MatchReview:
+        async with await self._connection() as conn, conn.transaction():
+            from app.services.alerts import validate_review_update
+
+            await _lock_mail_company(conn, review.company_id)
+            cur = await conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM screening.law WHERE id = %s)", (review.law_id,)
+            )
+            if not (await cur.fetchone())[0]:
+                raise NotFoundError(f"no law with id {review.law_id}")
+            cur = await conn.execute(
+                "SELECT pending_outreach_id, outreach_id, email_status FROM screening.match_review "
+                "WHERE company_id = %s AND law_id = %s FOR UPDATE",
+                (review.company_id, review.law_id),
+            )
+            old = await cur.fetchone()
+            validate_review_update(
+                MatchReview(
+                    company_id=review.company_id,
+                    law_id=review.law_id,
+                    pending_outreach_id=old[0],
+                    outreach_id=old[1],
+                    email_status=old[2],
+                )
+                if old
+                else None,
+                review,
+            )
+            if old is not None and old[0] is not None:
+                raise SendPendingError(
+                    f"the send of outreach {old[0]} is unclear; resolve it first", old[0]
+                )
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    "INSERT INTO screening.match_review (company_id, law_id, label, "
+                    "email_status, notes, sent_at, outreach_id, discussed_at, updated_at) "
+                    "VALUES (%(company_id)s, %(law_id)s, %(label)s, %(email_status)s, "
+                    "%(notes)s, %(sent_at)s, %(outreach_id)s, %(discussed_at)s, now()) "
+                    "ON CONFLICT (company_id, law_id) DO UPDATE SET label = EXCLUDED.label, "
+                    "email_status = EXCLUDED.email_status, notes = EXCLUDED.notes, "
+                    "sent_at = EXCLUDED.sent_at, outreach_id = EXCLUDED.outreach_id, "
+                    "discussed_at = EXCLUDED.discussed_at, updated_at = now() RETURNING *",
+                    review.model_dump(),
+                )
+                stored = MatchReview.model_validate(await cur.fetchone())
+            for entry in audit:
+                await write_audit(conn, entry)
+        return stored
+
+    async def list_seen_laws(self) -> list[int]:
+        async with await self._connection() as conn:
+            cur = await conn.execute("SELECT law_id FROM screening.law_seen ORDER BY law_id")
+            return [row[0] for row in await cur.fetchall()]
+
+    async def mark_law_seen(self, law_id: int) -> None:
+        async with await self._connection() as conn:
+            try:
+                await conn.execute(
+                    "INSERT INTO screening.law_seen (law_id) VALUES (%s) "
+                    "ON CONFLICT (law_id) DO NOTHING",
+                    (law_id,),
+                )
+            except psycopg.errors.ForeignKeyViolation:
+                raise NotFoundError(f"no law with id {law_id}") from None
+
+    async def reserve_multi_outreach(
+        self, request: MultiSendRequest, delivered_to: str, delivery_subject: str
+    ) -> Outreach:
+        from app.services.alerts import require_multi_sendable
+
+        cid, law_ids = request.company_id, sorted(set(request.law_ids))
+        async with (
+            await self._connection() as conn,
+            conn.transaction(),
+            conn.cursor(row_factory=dict_row) as cur,
+        ):
+            await _lock_mail_company(conn, cid)
+            await cur.execute(
+                "SELECT * FROM screening.match_review WHERE company_id = %s "
+                "AND law_id = ANY(%s) ORDER BY law_id FOR UPDATE",
+                (cid, law_ids),
+            )
+            found = {r["law_id"]: MatchReview.model_validate(r) for r in await cur.fetchall()}
+            await cur.execute(
+                "SELECT id FROM screening.outreach WHERE company_id = %s "
+                "AND status = 'pending' ORDER BY id LIMIT 1",
+                (cid,),
+            )
+            pending = await cur.fetchone()
+            await cur.execute(
+                "SELECT DISTINCT law_id FROM screening.match WHERE company_id = %s "
+                "AND is_current AND judge_relevant",
+                (cid,),
+            )
+            current = {r["law_id"] for r in await cur.fetchall()}
+            await cur.execute("SELECT * FROM pipeline.project_state WHERE company_id = %s", (cid,))
+            state = await cur.fetchone()
+            require_multi_sendable(
+                cid,
+                {law_id: found.get(law_id) for law_id in law_ids},
+                pending["id"] if pending else None,
+                current,
+                ProjectStatus.model_validate(state) if state else None,
+                await _busy(conn, cid, self.settings.step_lock_timeout_s),
+            )
+            await cur.execute(
+                "INSERT INTO screening.outreach(alert_id, law_ids, company_id, recipient, "
+                "delivered_to, subject, delivery_subject, sent_body, status, "
+                "template_updated_at) "
+                "SELECT NULL, %s, %s, %s, %s, %s, %s, %s, 'pending', updated_at "
+                "FROM screening.email_template WHERE id = 1 RETURNING *",
+                (
+                    law_ids,
+                    cid,
+                    request.recipient,
+                    delivered_to,
+                    request.subject,
+                    delivery_subject,
+                    request.body,
+                ),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise RepositoryError("email template missing; run --init-db")
+            outreach = Outreach.model_validate(row)
+            await cur.execute(
+                "UPDATE screening.match_review SET pending_outreach_id = %s "
+                "WHERE company_id = %s AND law_id = ANY(%s)",
+                (outreach.id, cid, law_ids),
+            )
+            return outreach
+
+    async def discard_company(self, company_id: str) -> None:
+        async with await self._connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "SELECT state FROM pipeline.project_state WHERE company_id = %s FOR UPDATE",
+                (company_id,),
+            )
+            state = await cur.fetchone()
+            if state is not None and state[0] != ProjectState.PUBLISHED:
+                raise StateError(f"project '{company_id}' is {state[0]}: only drafts are discarded")
+            cur = await conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM pipeline.runs WHERE company_id = %s "
+                "AND state IN ('queued', 'running'))",
+                (company_id,),
+            )
+            if (await cur.fetchone())[0]:
+                raise RunActiveError(f"a run of '{company_id}' is still active; wait for it")
+            cur = await conn.execute(
+                "SELECT d.id FROM profil.deal d JOIN pipeline.publications p "
+                "ON p.company_id = d.projektname WHERE d.projektname = %s",
+                (company_id,),
+            )
+            deal = await cur.fetchone()
+            if deal is not None:  # only rows the pipeline published, never a seed
+                async with conn.cursor() as c:
+                    await delete_project_rows(c, deal[0])
+            for table in (*WORKING_TABLES, "runs", "project_state", "publications", "client_info"):
+                await conn.execute(
+                    f"DELETE FROM pipeline.{table} WHERE company_id = %s", (company_id,)
+                )
+            await conn.execute("DELETE FROM pipeline.jobs WHERE company_id = %s", (company_id,))
 
     async def pending_profile_changes(self, company_id: str) -> list[int]:
         async with await self._connection() as conn:

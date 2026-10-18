@@ -129,6 +129,8 @@ export interface Evidence {
 }
 
 export interface MatchAssessment {
+  current?: boolean
+  invalidationReason?: string
   score: number
   confidence: number
   reason: string
@@ -142,6 +144,7 @@ export type MatchLabel = Open<'unlabeled' | 'relevant' | 'irrelevant'>
 export type EmailStatus = Open<'not_sent' | 'sent' | 'discussed'>
 
 export interface MatchReview {
+  sendPending?: boolean
   label: MatchLabel
   emailStatus: EmailStatus
   notes?: string
@@ -214,6 +217,7 @@ export interface UploadDocument {
 }
 
 export interface UploadRun {
+  error?: ApiError
   schemaVersion: string
   id: Id
   companyId: Id
@@ -224,6 +228,7 @@ export interface UploadRun {
 }
 
 export interface ProfileDraft {
+  draftVersion?: string
   schemaVersion: string
   companyId: Id
   runId: Id
@@ -236,4 +241,27 @@ export interface Collection<T> {
   runId?: Id
   generatedAt?: string
   items: T[]
+}
+
+export interface Job {
+  id: Id
+  operation: string
+  companyId?: Id
+  status: Open<'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted'>
+  error?: string
+  retryOf?: Id
+  createdAt: string
+  finishedAt?: string
+  result?: Record<string, unknown>
+}
+
+export interface Processing {
+  companyId: Id
+  state?: string
+  embeddingsStale: boolean
+  activeJob?: Job
+  latestJob?: Job
+  recovery: { available: boolean; action?: string; reason: string }
+  screeningPending: boolean
+  updatePending: boolean
 }

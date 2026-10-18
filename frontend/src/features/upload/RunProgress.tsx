@@ -1,4 +1,9 @@
 import { AlertTriangle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { adapter } from '../../data'
+import { Button } from '../../components/ui/Button'
+import { ErrorState } from '../../components/ui/States'
 import type { UploadDocument, UploadRun } from '../../data/types'
 import { Badge } from '../../components/ui/Badge'
 import { Card, CardHeader } from '../../components/ui/Card'
@@ -11,6 +16,13 @@ const isProblem = (d: UploadDocument) =>
 
 /** One row per document with status and warnings. Failed and skipped files stay visible (UI.md 11). */
 export function RunProgress({ run }: { run: UploadRun }) {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const rerun = useMutation({ mutationFn: () => adapter.rerunCompany!(run.companyId),
+    onSuccess: (next) => {
+      qc.removeQueries({ queryKey: ['draft', run.companyId] })
+      navigate(`/mandanten/${encodeURIComponent(run.companyId)}/pruefung?run=${encodeURIComponent(next.id)}`)
+    } })
   const total = run.documents.length
   const done = run.documents.filter(isDone).length
   const running = run.status === 'running'
@@ -36,6 +48,12 @@ export function RunProgress({ run }: { run: UploadRun }) {
         }
       />
       <div className="px-5 pb-4">
+        {running && total > 0 && done === total && <p className="mb-3 text-sm text-ink-muted">Angaben werden abgeglichen und gespeichert …</p>}
+        {run.status === 'failed' && <div className="mb-3" role="alert">
+          <p className="mb-2 text-danger">{run.error?.message ?? 'Die Verarbeitung wurde unterbrochen.'}</p>
+          {adapter.rerunCompany && <Button disabled={rerun.isPending} onClick={() => rerun.mutate()}>Erneut verarbeiten</Button>}
+          {rerun.error && <ErrorState error={rerun.error} />}
+        </div>}
         <div className="h-1.5 overflow-hidden rounded-full bg-neutral-soft" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done} aria-label="Fortschritt der Auswertung">
           <div
             className="h-full origin-left rounded-full bg-primary transition-transform duration-500 ease-[var(--ease-out)]"

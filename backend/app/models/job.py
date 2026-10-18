@@ -21,6 +21,7 @@ class JobOperation(StrEnum):
     SCREEN = "screen"
     ADVANCE = "advance"  # state-selected: embed, clean up, pending screening
     REFRESH = "refresh"  # embedding refresh after an update, then configured screening
+    SCREENING_RUN = "screening_run"  # UI button: ingest new source PDFs, screen every company
 
 
 class JobStatus(StrEnum):

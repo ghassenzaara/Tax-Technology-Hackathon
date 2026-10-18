@@ -1,5 +1,32 @@
 # DD Regulatory Monitoring: Project Brief
 
+## Implemented Klaris integration (2026-10-17)
+
+Klaris (`frontend/`, React 19/Vite/TanStack Query) can use the real backend through
+`VITE_DATA_SOURCE=http`, `VITE_API_URL=http://127.0.0.1:8000`; mock mode remains available.
+The backend owns the camelCase `/api/ui` contract, German profile labels, citation mapping,
+review decisions, client data/notes, law read state, company/law match grouping and reviews,
+template placeholders/reset/history, and confirmed multi-law outreach. Migration 010 is
+additive and preserves the legacy `/api` contract.
+
+The advisor starts screening with one button. A durable job ingests new PDFs from
+`LAW_SOURCE_DIR` (default `backend/mock_laws`), screens companies, and reports new laws,
+affected companies and deferred work. Content hashes and screening fingerprints avoid
+duplicate ingestion/model calls. Failed/interrupted jobs require explicit retry/recovery.
+No automatic source fetching or calendar/reminder functionality has been added.
+
+Additional DD uploads produce a diff against the current confirmed profile without
+republishing it. Explicit confirmation merges accepted changes with advisor provenance
+(document-level provenance for later updates is a documented first-version limitation),
+then removes working data and refreshes vectors. Reviewed versions/fingerprints prevent
+stale changes. Profile/client-data edits commit together; audit entries survive cleanup.
+
+Emails may cover several relevant company/law matches. Every send requires explicit human
+confirmation and uses the exact submitted snapshot. The server checks law terms and
+placeholders, current matches, fresh vectors, advisor labels and duplicate reservations.
+Uncertain delivery stays pending until deliberate CLI resolution. Automated checks use
+fake LLM calls and fake/log mail; no live SMTP or paid model calls are needed.
+
 Platform for Steuerberater. After a Due Diligence (DD), the advisor uploads the DD documents. The platform builds a structured **company profile**, monitors new and upcoming tax laws, and alerts the advisor when a law is relevant to a client, with a ready email (one fixed template, the same for every client). The goal: the advisor spots risks and tax planning opportunities (Gestaltungsmöglichkeiten) before anyone else and wins the client for follow-up work.
 
 Process diagram: `Project Diagram.mmd`
@@ -48,6 +75,7 @@ Step 0: the UI (teammates) sends the folder; our backend receives it through the
 - Each agent fills a **fixed JSON schema**, not free text. Every field carries a source (document + page).
 - Agents write **candidate values** (append-only, one row per field per document) to the DB. Each agent output is validated with Pydantic against the DB schema before the write. Agents never write the final profile value.
 - A **deterministic merge step** (plain code, no LLM call) reads the candidates and sets each field: same value from several documents = confirmed, different values = conflict with all candidates and sources kept for the advisor (for example two documents giving different revenue figures).
+- A subsequent **reconciliation check** uses the model once per conflict to compare semantic meaning and source context. It chooses the clearest complete alternative when wording differs, or the best supported applicable alternative when facts differ. It selects existing values, preserves original alternatives and sources, and leaves unjustified choices for review. Only equivalent records combine complementary details; a preferred record keeps its own values and citations. Failed or uncertain checks keep the original conflict. The advisor still confirms the profile; reconciliation history is retained in that confirmation's audit entry.
 - Low-confidence fields and OCR pages are flagged for the advisor.
 
 ### 2.2 Company profile

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { adapter } from './index'
 import type { CompanyUpdate, EmailTemplate, FactResolution, SendEmailInput, StoredEmailTemplate, UploadFileInfo } from './adapter'
-import type { Id, MatchReviewPatch } from './types'
+import type { Id, MatchReviewPatch, ProfileDraft } from './types'
 import { keys } from './queries'
 
 export function useUpdateMatchReview() {
@@ -24,6 +24,8 @@ export function useUpdateCompany(companyId: Id) {
       qc.invalidateQueries({ queryKey: keys.companies, exact: true })
       qc.invalidateQueries({ queryKey: ['emailTemplate', companyId] })
       qc.invalidateQueries({ queryKey: keys.audit(companyId) })
+      qc.invalidateQueries({ queryKey: ['processing', companyId] })
+      qc.invalidateQueries({ queryKey: ['matches'] })
     },
   })
 }
@@ -94,17 +96,19 @@ export function useUploadFiles(companyId: Id | null) {
   })
 }
 
-export function useConfirmProfile(companyId: Id) {
+export function useConfirmProfile(companyId: Id, draftVersion?: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (resolutions: Record<Id, FactResolution>) => adapter.confirmProfile(companyId, resolutions),
+    mutationFn: (resolutions: Record<Id, FactResolution>) => adapter.confirmProfile(companyId, resolutions, draftVersion),
     onSuccess: (company) => {
       qc.setQueryData(keys.company(companyId), company)
       qc.invalidateQueries({ queryKey: keys.companies, exact: true })
       qc.invalidateQueries({ queryKey: keys.audit(companyId) })
-      qc.removeQueries({ queryKey: ['draft', companyId] })
+      // Clear review evidence without recreating an enabled query after confirmation.
+      qc.setQueryData<ProfileDraft>(['draft', companyId], (draft) => draft ? { ...draft, facts: [] } : undefined)
       qc.invalidateQueries({ queryKey: ['emailTemplate', companyId] })
       qc.invalidateQueries({ queryKey: ['draftCompanies'] })
+      qc.invalidateQueries({ queryKey: ['processing', companyId] })
     },
   })
 }

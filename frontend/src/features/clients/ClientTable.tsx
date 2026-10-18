@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import type { Company, Match } from '../../data/types'
-import { relevantUpdateCount } from '../../data/derive'
+import { companyProject, relevantUpdateCount } from '../../data/derive'
 import { Badge } from '../../components/ui/Badge'
 import { EmptyState } from '../../components/ui/States'
 import { formatDate } from '../../lib/format'
@@ -12,7 +12,7 @@ export function filterCompanies(companies: Company[], query: string): Company[] 
   const q = query.trim().toLowerCase()
   if (!q) return companies
   return companies.filter((c) =>
-    [c.name, c.industry, c.legalForm, c.customerNumber, c.contact.name].some((v) => v?.toLowerCase().includes(q)),
+    [c.name, companyProject(c), c.industry, c.legalForm, c.customerNumber, c.contact.name].some((v) => v?.toLowerCase().includes(q)),
   )
 }
 
@@ -47,6 +47,7 @@ export function ClientTable({ companies, matches, query = '' }: { companies: Com
                   <Link to={href} className="font-medium text-ink hover:text-primary link-underline">
                     {c.name}
                   </Link>
+                  {companyProject(c) && <span className="block text-xs text-ink-muted">Projekt: {companyProject(c)}</span>}
                   <span className="block text-xs text-ink-muted md:hidden">{c.industry}</span>
                 </td>
                 <td className="hidden px-3 py-3 text-ink-muted md:table-cell">{c.industry ?? ''}</td>

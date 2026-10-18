@@ -28,6 +28,7 @@ from app.models.extraction import (
 )
 from app.models.profile import ProfileDraft
 from app.profile.merge import merge_candidates
+from app.profile.reconcile import reconcile_conflicts
 from app.profile.schema import ProfileSchema
 
 log = logging.getLogger(__name__)
@@ -168,6 +169,7 @@ class Orchestrator:
             max_granularity=self.settings.rounding_max_granularity,
             extractions=records,
         )
+        draft = await reconcile_conflicts(draft, self.schema, self.settings, self.client, records)
         # Review and confirmation read the stored draft: a draft that cannot be saved
         # (after the configured retries) fails the run instead of being published.
         await self._retrying(self.repository.save_profile_draft, draft)

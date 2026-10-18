@@ -71,7 +71,7 @@ export function LawChangeDetailPage() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {isMockData && <Badge tone="warning">Beispieldaten</Badge>}
             {l.version > 1 && <Badge tone="info">Aktualisiert</Badge>}
-            <a
+            {l.url && <a
               href={l.url}
               target="_blank"
               rel="noopener noreferrer"
@@ -80,7 +80,7 @@ export function LawChangeDetailPage() {
               Zur Quelle
               <ExternalLink className="size-3.5" aria-hidden />
               <span className="sr-only">(öffnet in neuem Tab)</span>
-            </a>
+            </a>}
           </div>
         </div>
         <a

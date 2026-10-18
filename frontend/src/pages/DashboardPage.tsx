@@ -9,6 +9,7 @@ import { useAdvisor, useCompanies, useLawChanges, useMatches } from '../data/que
 import { ClientTable } from '../features/clients/ClientTable'
 import { LawChangeRow } from '../features/lawchanges/LawChangeRow'
 import { DraftNotice } from '../features/upload/DraftNotice'
+import { ScreeningControl } from '../features/screening/ScreeningControl'
 import { cn } from '../lib/cn'
 import { ClientSearch, NewClientLink } from './ClientListPage'
 
@@ -42,6 +43,7 @@ export function DashboardPage() {
     <>
       <PageHeader title={title} description="Hier finden Sie die wichtigsten Informationen zu Ihren Mandanten und relevanten Gesetzesänderungen." />
       {error && <ErrorState error={error} />}
+      <ScreeningControl />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard

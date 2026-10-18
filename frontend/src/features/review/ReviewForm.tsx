@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Info, Pencil, RotateCcw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, Info, Pencil, RotateCcw } from 'lucide-react'
 import type { Company, Fact, ProfileDraft } from '../../data/types'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -13,7 +13,7 @@ import { reviewStatusText, textFor } from '../../lib/labels'
 import { FactValue } from '../profile/FactValue'
 import { FactEditor } from '../profile/ProfileEditor'
 import { groupFacts } from '../profile/StammdatenCard'
-import { canLeaveEmpty, needsDecision, ownDraft, resolve, summarize, type Choices, type FactChoice } from './reviewState'
+import { canLeaveEmpty, needsDecision, ownDraft, resolve, reviewFacts, reviewOverview, summarize, type Choices, type FactChoice, type ReviewFilter } from './reviewState'
 import type { FactResolution } from '../../data/adapter'
 import type { Id } from '../../data/types'
 
@@ -38,15 +38,16 @@ export function ReviewForm({
   error: unknown
 }) {
   const [choices, setChoices] = useState<Choices>({})
-  const [onlyOpen, setOnlyOpen] = useState(false)
+  const [filter, setFilter] = useState<ReviewFilter>('review')
   const [asking, setAsking] = useState(false)
   const isUpdate = company.status !== 'draft'
   const previous = useMemo(() => new Map(company.facts.map((f) => [f.label, f])), [company.facts])
 
   const summary = useMemo(() => summarize(draft.facts, choices), [draft.facts, choices])
-  const required = draft.facts.filter(needsDecision).length
+  const overview = reviewOverview(draft.facts)
+  const required = overview.review
   const openSet = new Set(summary.open)
-  const shown = onlyOpen ? draft.facts.filter((f) => openSet.has(f.id) || summary.errors[f.id]) : draft.facts
+  const shown = reviewFacts(draft.facts, filter)
   const groups = groupFacts(shown)
 
   const setChoice = (id: Id, choice: FactChoice | undefined) =>
@@ -75,25 +76,31 @@ export function ReviewForm({
 
   return (
     <div className="mt-6">
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold">Ergebnis der Dokumentenauswertung</h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          {overview.found} Angaben gefunden · {overview.conflicts} mit unterschiedlichen Werten · {overview.missing} nicht gefunden
+        </p>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-muted">
+          Prüfen Sie zuerst die Widersprüche und markierten Angaben. Bei Widersprüchen stehen die gefundenen Werte zur Auswahl.
+          Alle weiteren Angaben können Sie unter „Alle Angaben“ einsehen und bearbeiten.
+        </p>
+      </div>
       <div className="sticky top-16 z-10 -mx-1 mb-4 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <p className="text-sm font-medium" aria-live="polite">
             {summary.open.length === 0 ? (
               <span className="flex items-center gap-1.5 text-success">
                 <CheckCircle2 className="size-4" aria-hidden />
-                Alle offenen Felder sind entschieden
+                Alle offenen Angaben sind entschieden
               </span>
             ) : (
               <span className="flex items-center gap-1.5 text-danger">
                 <AlertTriangle className="size-4" aria-hidden />
-                Noch {summary.open.length} von {required} {required === 1 ? 'Feld' : 'Feldern'} offen
+                Noch {summary.open.length} {summary.open.length === 1 ? 'Angabe' : 'Angaben'} zu prüfen
               </span>
             )}
           </p>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-muted">
-            <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} className="size-4 accent-primary" />
-            Nur offene Felder
-          </label>
           <Button variant="primary" className="ml-auto" disabled={!summary.canConfirm || confirming} onClick={() => setAsking(true)}>
             {isUpdate ? 'Änderungen übernehmen' : 'Profil bestätigen'}
           </Button>
@@ -106,6 +113,18 @@ export function ReviewForm({
         </div>
       </div>
 
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Angaben filtern">
+        {([
+          ['review', 'Prüfbedarf', overview.review],
+          ['all', 'Alle Angaben', overview.total],
+          ['missing', 'Nicht gefunden', overview.missing],
+        ] as const).map(([key, label, count]) => <button key={key} type="button" aria-pressed={filter === key}
+          onClick={() => setFilter(key)} className={cn('rounded-lg border px-3 py-2 text-sm transition-colors',
+            filter === key ? 'border-primary bg-primary-soft font-medium text-primary' : 'border-line bg-surface text-ink-muted hover:border-line-strong')}>
+          {label} <span className="ml-1 tabular-nums">{count}</span>
+        </button>)}
+      </div>
+
       {error ? (
         <div className="mb-4">
           <ErrorState error={error} />
@@ -113,9 +132,14 @@ export function ReviewForm({
       ) : null}
 
       <div className="space-y-6">
-        {groups.map(([group, facts]) => (
-          <Card key={group}>
-            <CardHeader title={group} />
+        {groups.map(([group, facts], index) => (
+          <details key={`${filter}:${group}`} open={index === 0} className="group/review overflow-hidden rounded-xl border border-line bg-surface shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+            <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
+              <h3 className="text-sm font-semibold">{group}</h3>
+              <span className="text-xs text-ink-muted">{facts.length} {facts.length === 1 ? 'Angabe' : 'Angaben'}</span>
+              {facts.some((f) => openSet.has(f.id)) && <Badge tone="warning">{facts.filter((f) => openSet.has(f.id)).length} offen</Badge>}
+              <ChevronDown className="ml-auto size-4 shrink-0 text-ink-muted transition-transform group-open/review:rotate-180" aria-hidden />
+            </summary>
             <ul className="divide-y divide-line border-t border-line">
               {facts.map((f) => (
                 <FactReviewRow
@@ -130,9 +154,11 @@ export function ReviewForm({
                 />
               ))}
             </ul>
-          </Card>
+          </details>
         ))}
-        {shown.length === 0 && <p className="text-center text-sm text-ink-muted">Keine offenen Felder mehr.</p>}
+        {shown.length === 0 && <p className="py-6 text-center text-sm text-ink-muted">
+          {filter === 'missing' ? 'Für jede Angabe wurden Werte gefunden.' : 'Keine Angaben mit Prüfbedarf. Unter „Alle Angaben“ können Sie das Ergebnis einsehen.'}
+        </p>}
       </div>
 
       <ConfirmDialog
@@ -223,6 +249,7 @@ function FactReviewRow({
       <div className="flex flex-wrap items-center gap-2">
         <h4 className="text-sm font-medium">{fact.label}</h4>
         {fact.reviewStatus && <Badge tone={tone}>{statusLabel}</Badge>}
+        {fact.reasoning?.startsWith('KI-Abgleich:') && <Badge tone="neutral">KI-Abgleich</Badge>}
         {decided && (
           <span className="flex items-center gap-1 text-xs text-success">
             <CheckCircle2 className="size-3.5" aria-hidden />
@@ -235,9 +262,9 @@ function FactReviewRow({
       </div>
 
       {isUpdate && (
-        <p className="mt-1 text-xs text-ink-muted">
+        <div className="mt-1 text-xs text-ink-muted">
           Bisher: {previous ? <FactValue value={previous.value} type={previous.type} unit={previous.unit} label={previous.label} /> : 'nicht im Profil'}
-        </p>
+        </div>
       )}
 
       <div className="mt-2">
@@ -245,31 +272,36 @@ function FactReviewRow({
           <fieldset>
             <legend className="mb-2 text-xs text-ink-muted">Die Dokumente nennen unterschiedliche Werte. Bitte wählen Sie einen aus.</legend>
             <div className="space-y-2">
-              {fact.candidates?.map((c) => (
-                <label
+              {fact.candidates?.map((c, candidateIndex) => (
+                <div
                   key={c.id}
                   className={cn(
-                    'flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 hover:border-line-strong',
+                    'min-w-0 rounded-lg border p-4',
                     choice?.mode === 'candidate' && choice.candidateId === c.id ? 'border-primary bg-primary-soft' : 'border-line bg-surface',
                   )}
                 >
-                  <input
-                    type="radio"
-                    name={`fact-${fact.id}`}
-                    checked={choice?.mode === 'candidate' && choice.candidateId === c.id}
-                    onChange={() => onChoose({ mode: 'candidate', candidateId: c.id })}
-                    className="mt-0.5 size-4 accent-primary"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{formatScalar(c.value, fact.type, fact.unit, fact.label)}</span>
+                  <label className="mb-3 flex cursor-pointer items-center gap-2 text-sm font-medium">
+                    <input
+                      type="radio"
+                      name={`fact-${fact.id}`}
+                      checked={choice?.mode === 'candidate' && choice.candidateId === c.id}
+                      onChange={() => onChoose({ mode: 'candidate', candidateId: c.id })}
+                      className="size-4 accent-primary"
+                    />
+                    Variante {candidateIndex + 1}
+                  </label>
+                  <FactValue value={c.value} type={fact.type} unit={fact.unit} label={fact.label} />
+                  <div className="mt-3 border-t border-line/70 pt-2">
                     {c.sources.map((s, i) => (
-                      <span key={i} className="mt-0.5 block text-xs text-ink-muted">
-                        {s.filename}, Seite {s.page}
-                        {s.quote && <span className="italic"> „{s.quote}“</span>}
-                      </span>
+                      <div key={i} className="mt-1 text-xs text-ink-muted">
+                        {s.quote ? <details>
+                          <summary className="cursor-pointer">{s.filename}, Seite {s.page} · Beleg anzeigen</summary>
+                          <blockquote className="mt-2 border-l-2 border-line pl-3 leading-relaxed">„{s.quote}“</blockquote>
+                        </details> : <p>{s.filename}, Seite {s.page}</p>}
+                      </div>
                     ))}
-                  </span>
-                </label>
+                  </div>
+                </div>
               ))}
               <label
                 className={cn(
@@ -314,7 +346,21 @@ function FactReviewRow({
                 <FactValue value={fact.value} type={fact.type} unit={fact.unit} label={fact.label} />
               </div>
             )}
-            {!own && fact.alternatives && fact.alternatives.length > 0 && (
+            {!own && fact.reasoning?.startsWith('KI-Abgleich:') && (
+              <div className="mt-3 rounded-lg border border-line bg-canvas p-3 text-xs text-ink-muted">
+                <p className="leading-relaxed">{fact.reasoning}</p>
+                <details className="mt-2">
+                  <summary className="cursor-pointer font-medium">Ursprüngliche Angaben vergleichen</summary>
+                  <div className="mt-3 space-y-4">
+                    {fact.alternatives?.map((alternative, index) => <div key={index}>
+                      <FactValue value={alternative.value} type={fact.type} unit={fact.unit} label={fact.label} />
+                      <p className="mt-1">{alternative.sources.map((source) => `${source.filename}, S. ${source.page}`).join('; ')}</p>
+                    </div>)}
+                  </div>
+                </details>
+              </div>
+            )}
+            {!own && !fact.reasoning?.startsWith('KI-Abgleich:') && fact.alternatives && fact.alternatives.length > 0 && (
               <p className="mt-1 text-xs text-ink-muted">
                 Gerundete Angaben in anderen Dokumenten:{' '}
                 {fact.alternatives

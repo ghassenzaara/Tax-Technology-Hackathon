@@ -25,8 +25,17 @@ describe('formatting', () => {
     expect(formatScalar(null)).toBe('')
     expect(formatScalar('2027-03-31', 'date')).toBe('31.03.2027')
     expect(formatScalar(['a', 'b'], 'list')).toBe('a, b')
-    expect(formatScalar({ lat: 1 }, 'geo_point')).toBe('{"lat":1}')
+    expect(formatScalar({ lat: 1 }, 'geo_point')).toBe('lat: 1')
     expect(formatScalar('<b>x</b>')).toBe('<b>x</b>')
+  })
+
+  it('displays German vocabulary while leaving prose and unknown codes intact', () => {
+    expect(formatScalar('natuerliche_person', 'enum')).toBe('Natürliche Person')
+    expect(formatScalar('anhaengig')).toBe('Anhängig')
+    expect(formatScalar('aussenpruefung_171_4')).toBe('Außenprüfung (§ 171 Abs. 4 AO)')
+    expect(formatScalar('Unveränderter Text mit Steuer und Quelle')).toBe('Unveränderter Text mit Steuer und Quelle')
+    expect(formatScalar('new_backend_code')).toBe('new_backend_code')
+    expect(formatScalar([{ Art: 'natuerliche_person', Ende: null }])).toBe('Art: Natürliche Person')
   })
 
   it('unknown vocabulary values fall back to raw text', () => {

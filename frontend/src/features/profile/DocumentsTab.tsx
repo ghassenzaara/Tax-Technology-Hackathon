@@ -14,7 +14,7 @@ export function DocumentsTab({ company }: { company: Company }) {
           <FolderUp className="size-6" aria-hidden />
         </span>
         <p className="mt-4 max-w-md text-sm text-ink-muted">
-          Neue Dokumente werden ausgewertet. Sie prüfen danach nur Werte, die neu sind oder vom bestätigten Profil abweichen.
+          Neue Dokumente werden ausgewertet und die Angaben automatisch im Profil gespeichert. Sie können die Werte anschließend bearbeiten.
         </p>
         <Link
           to={`/mandanten/${encodeURIComponent(company.id)}/upload`}
@@ -25,7 +25,7 @@ export function DocumentsTab({ company }: { company: Company }) {
         </Link>
         <p className="mt-6 flex max-w-md items-start gap-2 text-left text-xs text-ink-subtle">
           <ShieldCheck className="mt-px size-4 shrink-0 text-success" aria-hidden />
-          Hochgeladene Dokumente werden nach der Auswertung gelöscht. Im Profil bleiben nur die Werte mit Dateiname und Seite als Quelle.
+          Hochgeladene Dokumente werden nach der Auswertung gelöscht. Im Profil bleiben die gespeicherten Angaben.
         </p>
       </div>
     </Card>

@@ -17,12 +17,15 @@ from app.db.repository import (
     PublishReport,
     Repository,
     RepositoryError,
+    RunActiveError,
+    SendPendingError,
     StaleDraftError,
     StateError,
     refused_publish,
 )
 from app.models.alert import SENDABLE, Alert, AlertStatus
 from app.models.audit import AuditEntry, AuditFilter, AuditKind
+from app.models.client import ClientInfo, MatchReview, MultiSendRequest
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import (
     AppealRow,
@@ -43,10 +46,12 @@ from app.models.match import (
     ScreeningStatus,
 )
 from app.models.outreach import EmailTemplate, Outreach, default_template
-from app.models.profile import FieldStatus, ProfileDraft
+from app.models.profile import FieldResult, FieldStatus, ProfileDraft
 from app.models.project import EMBEDDABLE, Confirmation, ProjectState, ProjectStatus
 from app.models.review import HintRow
 from app.models.run import Run, RunDocument, RunState
+from app.models.update import ADVISOR_SOURCE, ConfirmedProfile, ProfileRow
+from app.profile.reconcile import reconciliation_history
 from app.profile.review import draft_version
 from app.profile.schema import ProfileSchema
 
@@ -88,6 +93,9 @@ class MemoryRepository(Repository):
         self.matches: dict[tuple[str, int], Match] = {}  # (company, law section) -> row
         self.coverage: dict[tuple[str, int], tuple[bool, int, int]] = {}  # (company, law)
         self.jobs: dict[str, Job] = {}
+        self.client_info: dict[str, ClientInfo] = {}
+        self.match_reviews: dict[tuple[str, int], MatchReview] = {}  # (company, law) -> row
+        self.seen_laws: dict[int, datetime] = {}
         self._next_id = 0
 
     async def initialize(self) -> None:
@@ -210,6 +218,7 @@ class MemoryRepository(Repository):
                 new_value={
                     "draft_version": confirmation.draft_version,
                     "counts": confirmation.counts,
+                    "reconciliations": reconciliation_history(draft),
                 },
                 profile_version=1,
             )
@@ -291,6 +300,21 @@ class MemoryRepository(Repository):
         if company_id in self.states:
             self.states[company_id].running_step = None
             self.states[company_id].running_since = None
+
+    async def remove_profile_sources(self, company_id: str) -> None:
+        info = self.client_info.get(company_id)
+        if info:
+            info.citations = {}
+        draft = self.published.get(company_id)
+        if draft:
+            for field in draft.fields:
+                for result in field.items or [field]:
+                    for group in result.groups:
+                        group.candidates = []
+                        group.documents = []
+                    result.reconciliation = None
+                    if result.decision:
+                        result.decision.text = "Wert gespeichert"
 
     async def delete_working_data(self, company_id: str) -> dict[str, int]:
         counts = await self.count_working_rows(company_id)
@@ -602,7 +626,7 @@ class MemoryRepository(Repository):
             self.template = default_template(self.settings, datetime.now(UTC))
         return self.template.model_copy(deep=True)
 
-    async def edit_template(self, subject: str, body: str) -> EmailTemplate:
+    async def edit_template(self, subject: str, body: str, *, reset: bool = False) -> EmailTemplate:
         old = await self.get_template()
         self.template = EmailTemplate(
             subject=subject,
@@ -616,7 +640,7 @@ class MemoryRepository(Repository):
                 acted_by=self.settings.advisor_label,
                 acted_at=datetime.now(UTC),
                 old_value={"subject": old.subject, "body": old.body},
-                new_value={"subject": subject, "body": body},
+                new_value={"subject": subject, "body": body} | ({"reset": True} if reset else {}),
             )
         )
         return await self.get_template()
@@ -625,6 +649,16 @@ class MemoryRepository(Repository):
         from app.services.alerts import require_sendable
 
         alert = await self.get_alert(request.alert_id)
+        pending = next(
+            (
+                o
+                for o in self.outreach.values()
+                if o.company_id == alert.company_id and o.status == "pending"
+            ),
+            None,
+        )
+        if pending:
+            raise SendPendingError("Vorheriger Versand unklar; bitte zuerst auflösen.", pending.id)
         require_sendable(
             alert,
             alert.outreach,
@@ -656,10 +690,27 @@ class MemoryRepository(Repository):
         if row.status != "pending" or status not in {"sent", "failed"}:
             raise StateError(f"outreach {outreach_id} is {row.status}; cannot set {status}")
         row.status, row.error = status, error
+        law_ids = row.law_ids or ([self.alerts[row.alert_id].law.id] if row.alert_id else [])
+        for law_id in law_ids:
+            review = self.match_reviews.get((row.company_id, law_id))
+            if review is not None and review.pending_outreach_id == row.id:
+                review.pending_outreach_id = None
         if status == "sent":
             row.sent_at, row.provider_message_id = datetime.now(UTC), message_id
-            alert = self.alerts[row.alert_id]
-            alert.status, alert.status_changed_at = AlertStatus.ACTIONED, row.sent_at
+            for alert in self.alerts.values():
+                ours = alert.id == row.alert_id or (
+                    alert.company_id == row.company_id
+                    and alert.law.id in row.law_ids
+                    and alert.status in SENDABLE
+                )
+                if ours:
+                    alert.status, alert.status_changed_at = AlertStatus.ACTIONED, row.sent_at
+            for law_id in law_ids:  # the advisor's review follows every send from the app
+                review = self.match_reviews.setdefault(
+                    (row.company_id, law_id), MatchReview(company_id=row.company_id, law_id=law_id)
+                )
+                review.email_status, review.sent_at = "sent", row.sent_at
+                review.outreach_id, review.updated_at = row.id, row.sent_at
             self.audit.append(
                 AuditEntry(
                     id=len(self.audit) + 1,
@@ -681,6 +732,313 @@ class MemoryRepository(Repository):
             if (company_id is None or o.company_id == company_id)
             and (alert_id is None or o.alert_id == alert_id)
         ]
+
+    # UI contract layer -------------------------------------------------------------------
+
+    async def get_client_info(self, company_id: str) -> ClientInfo | None:
+        info = self.client_info.get(company_id)
+        return info.model_copy(deep=True) if info else None
+
+    async def save_client_info(self, info: ClientInfo, audit: list[AuditEntry] = ()) -> ClientInfo:
+        stored = info.model_copy(update={"updated_at": datetime.now(UTC)}, deep=True)
+        self.client_info[info.company_id] = stored
+        for entry in audit:
+            await self.append_audit(entry)
+        return stored.model_copy(deep=True)
+
+    async def save_client_note(self, company_id, notes, actor):
+        info = await self.get_client_info(company_id) or ClientInfo(company_id=company_id)
+        old, info.notes = info.notes or "", notes
+        audit = (
+            [
+                AuditEntry(
+                    company_id=company_id,
+                    kind=AuditKind.NOTE_CHANGED,
+                    acted_by=actor,
+                    field="notes",
+                    old_value=old,
+                    new_value=notes,
+                    screened_at=datetime.now(UTC),
+                )
+            ]
+            if old != notes
+            else []
+        )
+        await self.save_client_info(info, audit)
+
+    async def append_audit(self, entry: AuditEntry) -> None:
+        self.audit.append(
+            entry.model_copy(
+                update={"id": len(self.audit) + 1, "acted_at": datetime.now(UTC)}, deep=True
+            )
+        )
+
+    async def list_match_reviews(
+        self, company_id: str | None = None, law_id: int | None = None
+    ) -> list[MatchReview]:
+        return [
+            r.model_copy(deep=True)
+            for (cid, lid), r in sorted(self.match_reviews.items())
+            if (company_id is None or cid == company_id) and (law_id is None or lid == law_id)
+        ]
+
+    async def save_match_review(
+        self, review: MatchReview, audit: list[AuditEntry] = ()
+    ) -> MatchReview:
+        if review.law_id not in self.laws:
+            raise NotFoundError(f"no law with id {review.law_id}")
+        old = self.match_reviews.get((review.company_id, review.law_id))
+        from app.services.alerts import validate_review_update
+
+        validate_review_update(old, review)
+        if old is not None and old.pending_outreach_id is not None:
+            raise SendPendingError(
+                f"the send of outreach {old.pending_outreach_id} is unclear; resolve it first",
+                old.pending_outreach_id,
+            )
+        stored = review.model_copy(update={"updated_at": datetime.now(UTC)}, deep=True)
+        self.match_reviews[(review.company_id, review.law_id)] = stored
+        for entry in audit:
+            await self.append_audit(entry)
+        return stored.model_copy(deep=True)
+
+    async def list_seen_laws(self) -> list[int]:
+        return sorted(self.seen_laws)
+
+    async def mark_law_seen(self, law_id: int) -> None:
+        if law_id not in self.laws:
+            raise NotFoundError(f"no law with id {law_id}")
+        self.seen_laws.setdefault(law_id, datetime.now(UTC))
+
+    async def reserve_multi_outreach(
+        self, request: MultiSendRequest, delivered_to: str, delivery_subject: str
+    ) -> Outreach:
+        from app.services.alerts import require_multi_sendable
+
+        cid = request.company_id
+        reviews = {law_id: self.match_reviews.get((cid, law_id)) for law_id in request.law_ids}
+        pending = next(
+            (o for o in self.outreach.values() if o.company_id == cid and o.status == "pending"),
+            None,
+        )
+        current = {
+            m.law_id
+            for (c, _), m in self.matches.items()
+            if c == cid and m.is_current and m.judge_relevant
+        }
+        require_multi_sendable(
+            cid,
+            reviews,
+            pending.id if pending else None,
+            current,
+            await self.get_project_state(cid),
+            await self.company_busy(cid, self.settings.step_lock_timeout_s),
+        )
+        template = await self.get_template()
+        row = Outreach(
+            id=self._new_id(),
+            alert_id=None,
+            law_ids=list(request.law_ids),
+            company_id=cid,
+            recipient=request.recipient,
+            delivered_to=delivered_to,
+            subject=request.subject,
+            delivery_subject=delivery_subject,
+            sent_body=request.body,
+            created_at=datetime.now(UTC),
+            template_updated_at=template.updated_at,
+        )
+        self.outreach[row.id] = row
+        for review in reviews.values():
+            review.pending_outreach_id = row.id
+        return row.model_copy(deep=True)
+
+    async def discard_company(self, company_id: str) -> None:
+        state = self.states.get(company_id)
+        if state is not None and state.state is not ProjectState.PUBLISHED:
+            raise StateError(f"project '{company_id}' is {state.state}: only drafts are discarded")
+        if any(r.company_id == company_id and r.state.active for r in self.runs.values()):
+            raise RunActiveError(f"a run of '{company_id}' is still active; wait for it")
+        await self.delete_working_data(company_id)
+        self.states.pop(company_id, None)
+        self.published.pop(company_id, None)
+        self.client_info.pop(company_id, None)
+        self.runs = {k: r for k, r in self.runs.items() if r.company_id != company_id}
+        self.jobs = {k: j for k, j in self.jobs.items() if j.company_id != company_id}
+
+    async def read_ui_profile(
+        self, company_id: str, schema: ProfileSchema, settings: Settings
+    ) -> ConfirmedProfile:
+        """The memory stand-in for `read_profile`: rows of the confirmed draft (row ids are
+        positions, citations name the file and page of the strongest candidate)."""
+        state = self.states.get(company_id)
+        draft = self.published.get(company_id)
+        if state is None or draft is None or state.state not in EMBEDDABLE:
+            raise StateError(f"project '{company_id}' has no confirmed profile")
+        scalars, lists = {}, {}
+        for spec in schema.fields:
+            if spec.name not in draft.schema_fields:
+                continue
+            result = draft.field(spec.name)
+            if spec.is_list:
+                lists[spec.name] = [
+                    ProfileRow(id=n, values=dict(i.chosen), fundstelle=_citation(i))
+                    for n, i in enumerate(result.items, start=1)
+                    if not i.dropped and i.chosen
+                ]
+            elif not result.dropped:
+                scalars[spec.name] = result.chosen
+        return ConfirmedProfile(
+            company_id=company_id,
+            state=state.state,
+            profile_version=state.profile_version,
+            embeddings_stale=state.embeddings_stale,
+            scalars=scalars,
+            scalar_rows={},
+            lists=lists,
+            audit=await self.list_audit(AuditFilter(company_id=company_id)),
+        )
+
+    async def apply_ui_update(
+        self, company_id, version, request, info_patch, audit, schema, settings, today
+    ):
+        from app.db.repository import StaleProfileError
+
+        state = self.states.get(company_id)
+        if state is None or state.state not in EMBEDDABLE:
+            raise StateError("profile is not confirmed")
+        if state.profile_version != version:
+            raise StaleProfileError("profile version is stale")
+        busy = await self.company_busy(company_id, settings.step_lock_timeout_s)
+        if busy:
+            raise BusyError(busy)
+        result = await self.update_ui_profile(request, schema, settings, today) if request else None
+        if info_patch:
+            info = await self.get_client_info(company_id) or ClientInfo(company_id=company_id)
+            info = info.model_copy(update=info_patch)
+            await self.save_client_info(info, audit)
+            if request is None:
+                state.profile_version += 1
+        return result
+
+    async def update_ui_profile(self, request, schema, settings, today):
+        """UI workflow stand-in with the same validation and atomic commit as Postgres."""
+        from uuid import uuid4
+
+        from app.db.repository import StaleProfileError
+        from app.models.match import Invalidation
+        from app.models.profile import AppliedDecision, DecisionAction
+        from app.models.update import ChangeKind, UpdateResult
+        from app.profile.update import UpdateError, check_request
+
+        cid = request.company_id
+        state = self.states.get(cid)
+        if state is None or state.state not in EMBEDDABLE:
+            raise StateError("profile is not confirmed")
+        busy = await self.company_busy(cid, settings.step_lock_timeout_s)
+        if busy:
+            raise BusyError(busy)
+        if state.profile_version != request.profile_version:
+            raise StaleProfileError("profile version is stale")
+        errors = check_request(request, schema)
+        if errors:
+            raise UpdateError(errors)
+        draft = self.published[cid].model_copy(deep=True)
+        audit, changed = [], set()
+        update_id = uuid4()
+        for change in request.changes:
+            spec = schema.field(change.field)
+            field = draft.field(change.field)
+            old = field.chosen
+            row_id, row_key = change.row_id, change.key
+            if spec.is_list:
+                if change.kind is ChangeKind.ADD:
+                    field.items.append(
+                        FieldResult(
+                            name=change.field,
+                            status=FieldStatus.SINGLE_SOURCE,
+                            key={k: change.cells.get(k) for k in spec.key or []},
+                            value=change.cells,
+                        )
+                    )
+                    target = field.items[-1]
+                    row_id = len(field.items)
+                    old = None
+                else:
+                    target = next(
+                        (
+                            item
+                            for n, item in enumerate(field.items, 1)
+                            if not item.dropped
+                            and (
+                                (row_id is not None and n == row_id)
+                                or (row_key is not None and item.key == row_key)
+                            )
+                        ),
+                        None,
+                    )
+                    if target is None:
+                        raise NotFoundError("profile row not found")
+                    old = target.chosen
+                    row_id = field.items.index(target) + 1
+                row_key = target.key
+                new = None if change.kind is ChangeKind.REMOVE else {**(old or {}), **change.cells}
+                action = DecisionAction.DROP if new is None else DecisionAction.EDIT
+                target.decision = AppliedDecision(
+                    action=action, value=new, typed=True, text=f"{ADVISOR_SOURCE} {today}"
+                )
+                changed.add(f"{spec.table}:{row_id}")
+            else:
+                new = change.value
+                field.decision = AppliedDecision(
+                    action=DecisionAction.VALUE,
+                    value=new,
+                    typed=True,
+                    text=f"{ADVISOR_SOURCE} {today}",
+                )
+            audit.append(
+                AuditEntry(
+                    kind=AuditKind.PROFILE_CHANGED,
+                    company_id=cid,
+                    acted_by=request.changed_by,
+                    acted_at=datetime.now(UTC),
+                    update_id=update_id,
+                    table_name=spec.table,
+                    field=change.field,
+                    row_id=row_id,
+                    row_key=row_key,
+                    change_kind=change.kind,
+                    old_value=old,
+                    new_value=new,
+                    reason=request.reason,
+                    profile_version=state.profile_version + 1,
+                    screened_at=datetime.now(UTC)
+                    if change.field == "ansprechpartner_email"
+                    else None,
+                )
+            )
+        stale = any(c.field != "ansprechpartner_email" for c in request.changes)
+        self.published[cid] = draft
+        state.profile_version += 1
+        state.embeddings_stale = state.embeddings_stale or (
+            stale and state.state is not ProjectState.CONFIRMED
+        )
+        for entry in audit:
+            await self.append_audit(entry)
+        if stale:
+            for (company, _), match in self.matches.items():
+                if company == cid:
+                    match.is_current = False
+                    match.invalidation_reason = Invalidation.PROFILE_CHANGED
+                    self._sync_alert(match)
+        return UpdateResult(
+            company_id=cid,
+            update_id=update_id,
+            profile_version=state.profile_version,
+            changes=len(request.changes),
+            changed_features=sorted(changed),
+            embeddings_stale=state.embeddings_stale,
+        )
 
     async def pending_profile_changes(self, company_id: str) -> list[int]:
         return [
@@ -754,6 +1112,17 @@ class MemoryRepository(Repository):
         if running and (datetime.now(UTC) - state.running_since).total_seconds() < timeout_s:
             return f"{state.running_step} is running"
         return None
+
+
+def _citation(result: FieldResult) -> str | None:
+    """Same citation text the Postgres writer stores in `fundstelle`."""
+    if result.entered_by_advisor:
+        return ADVISOR_SOURCE
+    group = result.chosen_group
+    if group is None or not group.candidates:
+        return None
+    best = max(group.candidates, key=lambda c: c.confidence)
+    return f"{best.source_filename} S. {best.source_page}"
 
 
 def _conflicts(draft: ProfileDraft) -> dict[str, bool]:

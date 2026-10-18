@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from app.config import Settings
 from app.models.alert import Alert, AlertStatus
 from app.models.audit import AuditEntry, AuditFilter
+from app.models.client import ClientInfo, MatchReview, MultiSendRequest
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import EmbeddingRecord, ProfileSnapshot
 from app.models.job import Job
@@ -64,6 +65,10 @@ class StaleDraftError(RepositoryError):
 
 class StaleProfileError(RepositoryError):
     """The confirmed profile changed (new version) since the advisor loaded it."""
+
+
+class StatusLockedError(StateError):
+    """A sent email's durable review cannot be overwritten by a stale UI edit."""
 
 
 class BusyError(RepositoryError):
@@ -120,7 +125,8 @@ class Repository(ABC):
     async def get_template(self) -> EmailTemplate: ...
 
     @abstractmethod
-    async def edit_template(self, subject: str, body: str) -> EmailTemplate: ...
+    async def edit_template(self, subject: str, body: str, *, reset: bool = False) -> EmailTemplate:
+        """Store the template and audit it (`reset` marks a restored default text)."""
 
     @abstractmethod
     async def reserve_outreach(
@@ -143,6 +149,85 @@ class Repository(ABC):
     async def list_outreach(
         self, company_id: str | None = None, alert_id: int | None = None
     ) -> list[Outreach]: ...
+
+    # UI contract layer (/api/ui) ---------------------------------------------------------
+
+    async def merkmal_names(self) -> dict[str, str]:
+        return {}
+
+    @abstractmethod
+    async def get_client_info(self, company_id: str) -> ClientInfo | None: ...
+
+    @abstractmethod
+    async def save_client_info(self, info: ClientInfo, audit: list[AuditEntry] = ()) -> ClientInfo:
+        """Insert or replace the client data with its audit entries in one transaction."""
+
+    @abstractmethod
+    async def save_client_note(self, company_id: str, notes: str, actor: str) -> None:
+        """Change only notes, with its audit, without overwriting concurrent client edits."""
+
+    @abstractmethod
+    async def append_audit(self, entry: AuditEntry) -> None:
+        """Append one audit entry (for example documents_added)."""
+
+    @abstractmethod
+    async def list_match_reviews(
+        self, company_id: str | None = None, law_id: int | None = None
+    ) -> list[MatchReview]: ...
+
+    @abstractmethod
+    async def save_match_review(
+        self, review: MatchReview, audit: list[AuditEntry] = ()
+    ) -> MatchReview:
+        """Insert or replace the review with its audit entries in one transaction. Refused
+        (SendPendingError) while a send of this law is reserved."""
+
+    @abstractmethod
+    async def list_seen_laws(self) -> list[int]: ...
+
+    @abstractmethod
+    async def mark_law_seen(self, law_id: int) -> None:
+        """Idempotent; NotFoundError for an unknown law."""
+
+    @abstractmethod
+    async def reserve_multi_outreach(
+        self, request: MultiSendRequest, delivered_to: str, delivery_subject: str
+    ) -> Outreach:
+        """The UI send guard under row locks, then a pending outreach (alert_id None, the
+        laws in law_ids) committed before the provider call: every review is labeled
+        relevant, not sent and has no reserved send; no send of the company is pending; each
+        law has a current relevant decision; the vectors are fresh and no company work is
+        active. `finish_outreach` then completes it."""
+
+    @abstractmethod
+    async def discard_company(self, company_id: str) -> None:
+        """Delete an unconfirmed company: its pipeline rows, runs, project state, client data
+        and published profil rows. StateError once confirmed or while a run is active."""
+
+    async def read_ui_profile(
+        self, company_id: str, schema: ProfileSchema, settings: Settings
+    ) -> ConfirmedProfile:
+        """The confirmed profile the UI layer maps (Postgres: `read_profile`)."""
+        return await self.read_profile(company_id, schema, settings)
+
+    async def update_ui_profile(
+        self, request: UpdateRequest, schema: ProfileSchema, settings: Settings, today: date
+    ) -> UpdateResult:
+        return await self.update_profile(request, schema, settings, today)
+
+    @abstractmethod
+    async def apply_ui_update(
+        self,
+        company_id: str,
+        version: int,
+        request: UpdateRequest | None,
+        info_patch: dict,
+        audit: list[AuditEntry],
+        schema: ProfileSchema,
+        settings: Settings,
+        today: date,
+    ) -> UpdateResult | None:
+        """One atomic profile/client-data update, checked against the reviewed version."""
 
     @abstractmethod
     async def initialize(self) -> None:
@@ -264,6 +349,10 @@ class Repository(ABC):
     @abstractmethod
     async def list_audit(self, audit_filter: AuditFilter) -> list[AuditEntry]:
         """Audit log entries matching every given filter, newest first."""
+
+    @abstractmethod
+    async def remove_profile_sources(self, company_id: str) -> None:
+        """Remove stored document/page citations while retaining profile values and audit."""
 
     @abstractmethod
     async def delete_working_data(self, company_id: str) -> dict[str, int]:

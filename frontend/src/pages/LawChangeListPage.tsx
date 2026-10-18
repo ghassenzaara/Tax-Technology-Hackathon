@@ -9,6 +9,7 @@ import { isMockData } from '../data'
 import { relevantCompanyCount, unreadLawChangeIds } from '../data/derive'
 import { useAdvisor, useLawChanges, useMatches } from '../data/queries'
 import { LawChangeRow } from '../features/lawchanges/LawChangeRow'
+import { ScreeningControl } from '../features/screening/ScreeningControl'
 import { cn } from '../lib/cn'
 import { sourceTypeText, textFor } from '../lib/labels'
 
@@ -55,9 +56,10 @@ export function LawChangeListPage() {
             {isMockData && <Badge tone="warning">Beispieldaten</Badge>}
           </span>
         }
-        description="Neue und geänderte Regelungen aus der wöchentlichen Prüfung, neueste zuerst."
+        description="Neue und geänderte Regelungen aus der letzten Prüfung, neueste zuerst."
       />
       {(lawChanges.error || matches.error) && <ErrorState error={lawChanges.error ?? matches.error} />}
+      <ScreeningControl />
 
       <Card>
         <div className="flex flex-wrap items-center gap-3 p-4">

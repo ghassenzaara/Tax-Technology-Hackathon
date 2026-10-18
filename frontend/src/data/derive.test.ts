@@ -1,11 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { loadSeed } from './mock/seed'
-import { greetingFor, isOpenTask, newThisMonth, relevantCompanyCount, relevantUpdateCount, unreadLawChangeIds } from './derive'
+import { greetingFor, isOpenTask, missingCompanyFacts, newThisMonth, relevantCompanyCount, relevantUpdateCount, unreadLawChangeIds } from './derive'
 import { filterCompanies } from '../features/clients/ClientTable'
 
 const seed = loadSeed()
 
 describe('derived counts on the seed data', () => {
+  it('flags only missing information, including core fields, without duplicates', () => {
+    const base = seed.companies[0]
+    const missing = { ...base.facts[0], id: 'contact-email', reviewStatus: 'missing', value: null }
+    const saved = { ...base.facts[0], id: 'saved', reviewStatus: 'confirmed', value: false }
+    const company = { ...base, facts: [missing, saved], extra: { coreFacts: [missing] } }
+    expect(missingCompanyFacts(company)).toEqual([missing])
+  })
+  it('keeps old assessments out of actionable counts', () => {
+    const match = { ...seed.matches[1], assessment: { ...seed.matches[1].assessment, current: false } }
+    expect(isOpenTask(match)).toBe(false)
+    expect(relevantCompanyCount([match], match.lawChangeId)).toBe(0)
+    expect(relevantUpdateCount([match], match.companyId)).toBe(0)
+    expect(unreadLawChangeIds([match], seed.advisors[0])).toEqual([])
+  })
   it('unread law changes', () => {
     expect(unreadLawChangeIds(seed.matches, seed.advisors[0]).sort()).toEqual(['law-001', 'law-002', 'law-003'])
   })
@@ -46,5 +60,11 @@ describe('dashboard helpers', () => {
     expect(filterCompanies(seed.companies, 'bau').map((c) => c.name)).toEqual(['Schneider Bau GmbH & Co. KG'])
     expect(filterCompanies(seed.companies, 'larsen').map((c) => c.name)).toEqual(['Nordlicht Immobilien AG'])
     expect(filterCompanies(seed.companies, '  ')).toHaveLength(5)
+  })
+
+  it('finds a client by its project without creating another client entry', () => {
+    const company = { ...seed.companies[0], name: 'Nordhafen Logistik GmbH', extra: { projekt: 'Hafenkante' } }
+    expect(filterCompanies([company], 'hafenkante')).toEqual([company])
+    expect(filterCompanies([company], 'nordhafen')).toEqual([company])
   })
 })

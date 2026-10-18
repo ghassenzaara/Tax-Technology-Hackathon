@@ -24,7 +24,7 @@ export const reviewStatusText: Record<string, string> = {
   confirmed: 'Bestätigt',
   single_source: 'Eine Quelle',
   conflict: 'Konflikt',
-  missing: 'Nicht gefunden',
+  missing: 'Eingabe erforderlich',
   advisor_entered: 'Manuell eingetragen',
 }
 

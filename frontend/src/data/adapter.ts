@@ -9,6 +9,8 @@ import type {
   Outreach,
   ProfileDraft,
   UploadRun,
+  Job,
+  Processing,
 } from './types'
 
 /** Error object as the backend sends it: machine code plus a message to show (UI.md 17). */
@@ -27,6 +29,7 @@ export type CompanyCorePatch = Partial<
 >
 
 export interface CompanyUpdate {
+  profileVersion?: number
   core?: CompanyCorePatch
   /** New values for existing facts, by fact id. */
   facts?: { id: Id; value: unknown }[]
@@ -101,7 +104,15 @@ export interface DataAdapter {
   uploadFiles(companyId: Id | null, files: UploadFileInfo[]): Promise<UploadRun>
   getRunProgress(runId: Id): Promise<UploadRun>
   getProfileDraft(companyId: Id): Promise<ProfileDraft>
-  confirmProfile(companyId: Id, resolutions: Record<Id, FactResolution>): Promise<Company>
+  confirmProfile(companyId: Id, resolutions: Record<Id, FactResolution>, draftVersion?: string): Promise<Company>
+
+  startScreening?(): Promise<Job>
+  getLatestScreening?(): Promise<Job | null>
+  rerunCompany?(companyId: Id): Promise<UploadRun>
+  getJob?(id: Id): Promise<Job>
+  retryJob?(id: Id): Promise<Job>
+  getProcessing?(companyId: Id): Promise<Processing>
+  recoverCompany?(companyId: Id): Promise<Job | null>
 
   listLawChanges(): Promise<LawChange[]>
   getLawChange(id: Id): Promise<LawChange>

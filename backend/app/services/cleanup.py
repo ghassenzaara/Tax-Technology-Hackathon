@@ -92,6 +92,13 @@ async def cleanup_project(
     start = perf_counter()
     targets = await cleanup_targets(repository, settings, company_id, list(paths))
     state = await repository.get_project_state(company_id)
+    runs = await repository.list_runs(company_id)
+    if (
+        runs
+        and runs[0].started_by == "update_dd"
+        and await repository.get_profile_draft(company_id)
+    ):
+        raise StateError("new documents await advisor review before cleanup")
     if state is not None and state.state is ProjectState.CLEANED:
         report = await _verify(repository, company_id, targets, ProjectState.CLEANED)
         if report.ok:  # repeated run: nothing left to do

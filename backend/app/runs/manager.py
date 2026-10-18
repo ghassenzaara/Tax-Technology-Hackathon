@@ -12,11 +12,14 @@ on simultaneous runs (later runs wait as `queued`). At server start, runs left q
 running are marked interrupted; a rerun resumes cheaply because candidate writes are
 idempotent. A draft that cannot be saved fails the run (nothing is published). The work
 after confirmation (embed, clean up, refresh, screening) runs as jobs (runs/jobs.py).
+The UI completion hook automatically confirms selected values before the run is reported
+as finished to the browser; the legacy API and CLI retain their explicit review flow.
 """
 
 import asyncio
 import logging
 from collections import Counter
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -65,6 +68,7 @@ class RunManager:
         self._lock = asyncio.Lock()  # one start decision at a time
         self._runs: dict[str, asyncio.Task] = {}  # company id -> active run task
         self._tasks: set[asyncio.Task] = set()  # every active run task
+        self.on_finished: Callable[[Run], Awaitable[None]] | None = None
 
     async def startup(self) -> None:
         interrupted = await self.repository.interrupt_active_runs(RESTARTED)
@@ -151,6 +155,10 @@ class RunManager:
                 await repository.save_run(run)
                 await self._process(run)
             run.state = RunState.FINISHED
+            run.finished_at = datetime.now(UTC)
+            await repository.save_run(run)
+            if self.on_finished is not None:
+                await self.on_finished(run)
         except asyncio.CancelledError:
             run.state, run.last_error = RunState.INTERRUPTED, STOPPED
             run.finished_at = datetime.now(UTC)
@@ -160,6 +168,12 @@ class RunManager:
             log.exception("run %s of %s failed", run.run_id, run.company_id)
             run.state = RunState.FAILED
             run.last_error = redact(f"{type(exc).__name__}: {exc}", self.settings)[:2000]
+        if run.state is RunState.FINISHED:
+            return  # already saved; cleanup may now be updating its folder reference
+        # A post-processing job may already have cleared the stored upload folder.
+        stored = await repository.get_run(run.run_id)
+        if stored is not None:
+            run.folder = stored.folder
         run.finished_at = datetime.now(UTC)
         await repository.save_run(run)
 
@@ -207,7 +221,9 @@ class RunManager:
             log.warning("run %s: no usable document, nothing published", run.run_id)
             return
         draft = await orchestrator.merge(run.company_id, extractions, run_scoped=True)
-        await orchestrator.publish(draft, extractions, run_scoped=True)
+        state = await self.repository.get_project_state(run.company_id)
+        if state is None or state.state is ProjectState.PUBLISHED:
+            await orchestrator.publish(draft, extractions, run_scoped=True)
         run.published = True
 
 

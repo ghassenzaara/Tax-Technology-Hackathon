@@ -67,7 +67,7 @@ export function UploadPage() {
         title={isNew ? 'Neuer Mandant: DD Unterlagen hochladen' : 'Weitere Dokumente hochladen'}
         description={
           isNew
-            ? 'Laden Sie den DD Ordner hoch. Klaris liest das Profil daraus und Sie prüfen es im nächsten Schritt. Erst nach Ihrer Bestätigung wird der Mandant angelegt.'
+            ? 'Laden Sie den DD Ordner hoch. Klaris wertet die Dokumente aus und speichert das Profil automatisch. Fehlende Informationen können Sie anschließend ergänzen und alle Angaben jederzeit bearbeiten.'
             : c?.name
         }
         back={isNew || !c ? { to: '/mandanten', label: 'Zurück zu den Mandanten' } : { to: `${hrefFor(c.id)}?tab=dokumente`, label: 'Zurück zum Mandanten' }}
@@ -178,7 +178,7 @@ export function UploadPage() {
       <div className="mt-6 flex justify-end gap-2">
         {files.length > 0 && <Button onClick={() => setFiles([])}>Auswahl leeren</Button>}
         <Button variant="primary" onClick={start} disabled={files.length === 0 || upload.isPending} className="group">
-          {upload.isPending ? 'Wird hochgeladen' : 'Hochladen und prüfen'}
+          {upload.isPending ? 'Wird hochgeladen' : 'Hochladen und speichern'}
           <ArrowRight className="nudge size-4" aria-hidden />
         </Button>
       </div>

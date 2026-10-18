@@ -24,17 +24,24 @@ from app.db.repository import (
     StaleDraftError,
     StaleProfileError,
     StateError,
+    StatusLockedError,
     UnsupportedError,
 )
 from app.mail.provider import MailConfigError, MailError
 from app.profile.review import DecisionError
 from app.runs.jobs import LLMUnavailableError
 from app.services.email import SendFailed, SendUncertain
+from app.ui.mapping import MappingError, UnresolvedFields
 
 log = logging.getLogger("app.api")
 
 
 class ErrorCode(StrEnum):
+    LAW_TERMS_FOUND = "law_terms_found"
+    STATUS_LOCKED = "status_locked"
+    NOT_ALLOWED = "not_allowed"
+    UNRESOLVED_FIELDS = "unresolved_fields"
+    VALIDATION_ERROR = "validation_error"
     VALIDATION = "validation"  # 422: invalid body, decision or change; details per field
     BAD_REQUEST = "bad_request"  # 400: malformed request (for example a broken multipart body)
     EMPTY_UPLOAD = "empty_upload"  # 400: no file sent, or every file rejected (details per file)
@@ -90,6 +97,7 @@ class UploadTooLarge(Exception):
 
 # Most specific first: StaleDraftError and the others are RepositoryError subclasses.
 REPOSITORY_ERRORS: list[tuple[type[RepositoryError], int, ErrorCode]] = [
+    (StatusLockedError, 409, ErrorCode.STATUS_LOCKED),
     (NotFoundError, 404, ErrorCode.NOT_FOUND),
     (SendPendingError, 409, ErrorCode.SEND_PENDING),
     (AlreadySentError, 409, ErrorCode.ALREADY_SENT),
@@ -143,6 +151,15 @@ def error_response(
 
 
 def install_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(MappingError)
+    async def mapping_error(request: Request, exc: MappingError) -> JSONResponse:
+        code = (
+            ErrorCode.UNRESOLVED_FIELDS
+            if isinstance(exc, UnresolvedFields)
+            else ErrorCode.VALIDATION_ERROR
+        )
+        return error_response(422, code, str(exc))
+
     @app.exception_handler(ApiError)
     async def api_error(request: Request, exc: ApiError) -> JSONResponse:
         return error_response(exc.status, exc.code, exc.message, exc.details)

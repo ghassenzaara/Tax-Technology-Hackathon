@@ -1,26 +1,36 @@
-import type { Advisor, Id, Match } from './types'
+import type { Advisor, Company, Fact, Id, Match } from './types'
+
+export function companyProject(company: Company): string | undefined {
+  const project = company.extra?.projekt
+  return typeof project === 'string' && project.trim() ? project.trim() : undefined
+}
+
+export function missingCompanyFacts(company: Company): Fact[] {
+  const core = Array.isArray(company.extra?.coreFacts) ? company.extra.coreFacts as Fact[] : []
+  return [...new Map([...core, ...company.facts].filter(f => f.reviewStatus === 'missing').map(f => [f.id, f])).values()]
+}
 
 // Counter definitions from PLANNING.md section 3. Pure functions, unit tested.
 
 /** Law changes with at least one match for the advisor's clients that the advisor has not opened. */
 export function unreadLawChangeIds(matches: Match[], advisor: Advisor): Id[] {
   const seen = new Set(advisor.seenLawChangeIds ?? [])
-  return [...new Set(matches.map((m) => m.lawChangeId))].filter((id) => !seen.has(id))
+  return [...new Set(matches.filter((m) => m.assessment.current !== false).map((m) => m.lawChangeId))].filter((id) => !seen.has(id))
 }
 
 /** Unlabeled matches, plus relevant matches not yet sent. */
 export function isOpenTask(m: Match): boolean {
-  return m.review.label === 'unlabeled' || (m.review.label === 'relevant' && m.review.emailStatus === 'not_sent')
+  return m.assessment.current !== false && (m.review.label === 'unlabeled' || (m.review.label === 'relevant' && m.review.emailStatus === 'not_sent'))
 }
 
 /** "Relevanz für N Mandanten": matches of a law not labeled irrelevant. */
 export function relevantCompanyCount(matches: Match[], lawChangeId: Id): number {
-  return new Set(matches.filter((m) => m.lawChangeId === lawChangeId && m.review.label !== 'irrelevant').map((m) => m.companyId)).size
+  return new Set(matches.filter((m) => m.assessment.current !== false && m.lawChangeId === lawChangeId && m.review.label !== 'irrelevant').map((m) => m.companyId)).size
 }
 
 /** "Relevante Updates" per client: not labeled irrelevant and not discussed. */
 export function relevantUpdateCount(matches: Match[], companyId: Id): number {
-  return matches.filter((m) => m.companyId === companyId && m.review.label !== 'irrelevant' && m.review.emailStatus !== 'discussed').length
+  return matches.filter((m) => m.assessment.current !== false && m.companyId === companyId && m.review.label !== 'irrelevant' && m.review.emailStatus !== 'discussed').length
 }
 
 /** Companies created in the same calendar month as `now` (Europe/Berlin is close enough to UTC for months). */

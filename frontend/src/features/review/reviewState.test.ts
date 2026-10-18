@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadSeed } from '../../data/mock/seed'
 import type { Fact } from '../../data/types'
-import { ownDraft, resolve, summarize, type Choices } from './reviewState'
+import { ownDraft, resolve, reviewFacts, reviewOverview, summarize, type Choices } from './reviewState'
 
 const draft = loadSeed().draftTemplate
 const fact = (id: string) => draft.facts.find((f) => f.id === id)!
@@ -12,6 +12,14 @@ const plain = fact('d-f01') // confirmed
 const rounding = fact('d-f04') // confirmed with alternatives
 
 describe('review rules', () => {
+  it('counts conflicts as found and separates missing values from review work', () => {
+    const facts = [plain, conflict, ocr, missing]
+    expect(reviewOverview(facts)).toEqual({ total: 4, found: 3, missing: 1, conflicts: 1, review: 3 })
+    expect(reviewFacts(facts, 'review')).toEqual([conflict, ocr, missing])
+    expect(reviewFacts(facts, 'missing')).toEqual([missing])
+    expect(reviewFacts(facts, 'all')).toEqual(facts)
+  })
+
   it('starts with exactly the conflict, OCR and missing fields open', () => {
     const s = summarize(draft.facts, {})
     expect(s.open.sort()).toEqual(['d-f05', 'd-f06', 'd-f07', 'd-f10', 'd-f12', 'd-f13', 'd-f14', 'd-f15'])

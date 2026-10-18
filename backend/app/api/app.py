@@ -21,7 +21,7 @@ from openai import AsyncOpenAI
 from app.api.deps import Services
 from app.api.errors import ErrorCode, install_error_handlers
 from app.api.middleware import RequestContext, RequestGuard
-from app.api.routes import jobs, outreach, profile, review, screening, system, uploads
+from app.api.routes import jobs, outreach, profile, review, screening, system, ui, uploads
 from app.config import Settings, get_settings
 from app.db.repository import Repository, make_repository
 from app.llm import make_client
@@ -29,6 +29,7 @@ from app.mail.provider import MailProvider
 from app.profile.schema import ProfileSchema, load_profile_schema
 from app.runs.jobs import JobManager
 from app.runs.manager import RunManager
+from app.ui.service import UiService
 
 log = logging.getLogger("app.api")
 
@@ -86,6 +87,7 @@ def create_app(
             client=llm,
             mail=mail,
         )
+        services.runs.on_finished = UiService(services).auto_save
         await services.runs.startup()
         await services.jobs.startup()  # interrupted jobs stay interrupted: no LLM call
         app.state.services = services
@@ -111,6 +113,7 @@ def create_app(
         screening.router,
         outreach.router,
         jobs.router,
+        ui.router,
     )
     for router in routers:
         app.include_router(router)
@@ -120,13 +123,14 @@ def create_app(
         limits={
             uploads.UPLOAD_PATH: int(settings.upload_max_total_mb * 1024 * 1024)
             + MULTIPART_OVERHEAD,
+            ui.UPLOAD_PATH: int(settings.upload_max_total_mb * 1024 * 1024) + MULTIPART_OVERHEAD,
             screening.LAWS_PATH: int(settings.max_file_mb * 1024 * 1024) + LAW_OVERHEAD,
         },
     )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
         expose_headers=["X-Request-ID", "Location"],
     )

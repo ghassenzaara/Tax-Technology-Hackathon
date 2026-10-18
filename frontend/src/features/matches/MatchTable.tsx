@@ -99,6 +99,8 @@ export function MatchDetails({ match }: { match: Match }) {
   const level = confidenceLevel(a.confidence)
   return (
     <div className="space-y-3 text-sm">
+      {a.current === false && <p role="status" className="rounded-lg bg-warning-soft p-3 text-warning">Früheres Prüfergebnis. Bitte Screening erneut starten, bevor eine E-Mail versendet wird.</p>}
+      {r.sendPending && <p role="alert" className="rounded-lg bg-warning-soft p-3 text-warning">Vorheriger Versand unklar. Bitte im Gmail-Gesendet-Ordner prüfen und den Versand auflösen lassen.</p>}
       <div>
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <h4 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Begründung</h4>

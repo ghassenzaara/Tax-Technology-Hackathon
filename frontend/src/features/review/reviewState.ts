@@ -18,6 +18,24 @@ export type Choices = Record<Id, FactChoice>
 
 export { needsDecision }
 
+export type ReviewFilter = 'review' | 'all' | 'missing'
+
+export function reviewOverview(facts: Fact[]) {
+  const missing = facts.filter((f) => f.reviewStatus === 'missing').length
+  return {
+    total: facts.length,
+    found: facts.length - missing,
+    missing,
+    conflicts: facts.filter((f) => f.reviewStatus === 'conflict').length,
+    review: facts.filter(needsDecision).length,
+  }
+}
+
+/** Decided rows stay visible in the review filter so a choice can still be changed. */
+export function reviewFacts(facts: Fact[], filter: ReviewFilter): Fact[] {
+  return facts.filter((f) => filter === 'all' || (filter === 'missing' ? f.reviewStatus === 'missing' : needsDecision(f)))
+}
+
 /** The company name is required; every other field may be left empty on purpose. */
 export function canLeaveEmpty(fact: Fact): boolean {
   return fact.coreField !== 'name'

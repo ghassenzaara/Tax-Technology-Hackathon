@@ -14,6 +14,11 @@ class AuditKind(StrEnum):
     PROFILE_CHANGED = "profile_changed"  # one per change of an update call
     EMAIL_SENT = "email_sent"  # step 18: reference to the outreach snapshot
     TEMPLATE_EDITED = "template_edited"  # steps 17 and 18: old and new template text
+    # UI contract layer (/api/ui): the advisor's review of a match, client notes, documents
+    # uploaded into a confirmed client.
+    MATCH_REVIEW_CHANGED = "match_review_changed"  # row_key {law_id}: field, old and new value
+    NOTE_CHANGED = "note_changed"  # old and new note text
+    DOCUMENTS_ADDED = "documents_added"  # new_value {files, run_id}
 
 
 class AuditEntry(BaseModel):

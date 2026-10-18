@@ -30,6 +30,8 @@ from pydantic import BaseModel, Field
 from app.models.audit import AuditEntry
 from app.models.project import ProjectState
 
+ADVISOR_SOURCE = "Vom Steuerberater eingegeben"  # fundstelle of a typed value (no document)
+
 
 class ChangeKind(StrEnum):
     EDIT = "edit"  # scalar value or cells of a list row

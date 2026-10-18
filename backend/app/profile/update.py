@@ -96,11 +96,15 @@ def _check_row(spec: FieldSpec, change: Change) -> list[FieldError]:
             column = columns.get(name)
             if column is None or name in PROTECTED:
                 errors.append(error(change, f"unknown column {name}"))
-            elif not column.db and not adding:
+            elif (
+                not column.db and not adding and not (spec.table == "finding" and name == "normen")
+            ):
                 errors.append(error(change, f"{name}: links are set when the row is added"))
             elif value is None:
                 if column.required:
                     errors.append(error(change, f"{name}: a required field cannot be emptied"))
+            elif spec.table == "finding" and name == "normen" and value == []:
+                pass  # an explicit empty list removes the finding's norm links
             elif message := typed_value_error(column, value):
                 errors.append(error(change, f"{name}: {message}"))
         if adding:

@@ -126,6 +126,8 @@ class Settings(BaseSettings):
     # A legal source uploaded through the API is screened against every eligible company
     # in the same job, so a relevant new law alerts the advisor without another call.
     screen_after_ingest: bool = True
+    law_source_dir: Path = Path(__file__).resolve().parents[1] / "mock_laws"
+    sender_salutation: str | None = None
 
     # Single-user platform (one Steuerberater, no login): the label stamped as bestaetigt_von
     # and in the audit log by the HTTP API, which takes no person from the caller.

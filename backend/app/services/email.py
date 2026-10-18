@@ -40,18 +40,28 @@ async def edit_template(
 
 async def prepare_email(repository: Repository, settings: Settings, alert_id: int) -> EmailPreview:
     alert = await repository.get_alert(alert_id)
+    ui_history = [
+        o
+        for o in await repository.list_outreach(alert.company_id)
+        if o.alert_id is None and (o.status == "pending" or alert.law.id in o.law_ids)
+    ]
     require_sendable(
         alert,
-        alert.outreach,
+        alert.outreach + ui_history,
         await repository.get_project_state(alert.company_id),
         await repository.company_busy(alert.company_id, settings.step_lock_timeout_s),
     )
     template = await repository.get_template()
     recipient = await repository.get_contact_email(alert.company_id) or ""
+    from app.ui.templates import Contact, Signer, fill
+
+    info = await repository.get_client_info(alert.company_id)
+    contact = Contact(info.contact_name or "", info.contact_salutation) if info else Contact()
+    signer = Signer(settings.sender_name, settings.advisor_label, settings.sender_firm)
     return EmailPreview(
         alert_id=alert_id,
-        subject=template.subject,
-        body=template.body,
+        subject=fill(template.subject, contact, signer),
+        body=fill(template.body, contact, signer),
         recipient=recipient,
         recipient_source="profile" if recipient else "missing",
         message=None if recipient else "Keine E-Mail-Adresse im Profil gefunden",

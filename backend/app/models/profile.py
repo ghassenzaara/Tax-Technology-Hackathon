@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,14 @@ class CandidateGroup(BaseModel):
     rounding_equivalent: bool = False  # members differ only by rounding
     max_confidence: float = 0.0
     best_rank: int | None = None  # strongest source class rank (1 = Bescheid, 9 = Entwurf)
+
+
+class Reconciliation(BaseModel):
+    """An automatic comparison; original candidates remain available for review."""
+
+    reason: str
+    original_groups: list[CandidateGroup]
+    mode: Literal["equivalent", "preferred"] = "equivalent"
 
 
 class DecisionAction(StrEnum):
@@ -62,6 +70,7 @@ class FieldResult(BaseModel):
     items: list["FieldResult"] = []  # list fields: one result per item key
     warnings: list[str] = []  # for example candidates dropped because the value is corrupt
     decision: AppliedDecision | None = None  # advisor decision (confirmed draft only)
+    reconciliation: Reconciliation | None = None
 
     @property
     def dropped(self) -> bool:

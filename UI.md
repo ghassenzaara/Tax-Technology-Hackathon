@@ -1,5 +1,62 @@
 # UI integration guide
 
+## Klaris HTTP integration (2026-10-17)
+
+The implemented Klaris frontend uses the camelCase `/api/ui` adapter API. The legacy
+`/api` calls documented below remain available. Copy `frontend/.env.example` to
+`frontend/.env.local` to select HTTP mode; restart Vite after changing environment settings.
+Without that setting the mock adapter remains active. Use `MAIL_MODE=log` for verification.
+
+- UI routes cover advisor, confirmed/draft companies, updates, notes, uploads and progress,
+  review/confirmation, laws/read state, grouped matches/reviews, template edit/reset/history,
+  confirmed multi-law email sends, outreach and audit. Exact requests are in `backend/openapi.json`.
+- UI uploads now save and confirm selected values automatically, including additional
+  documents. No per-field acknowledgments are required. Remaining conflicts use the
+  merge's preferred source; missing information stays empty and is labeled
+  "Eingabe erforderlich". The browser opens the saved, editable company profile after
+  progress finishes. The confirmation audit actor is "Automatische Profilerstellung";
+  later manual changes retain their normal history. Legacy `/api` review calls are unchanged.
+- Saved company profiles no longer display or retain document/page citations. UI saves
+  and edits clear the citation cache, row source references and associated profile-document
+  metadata. Fact `sources` arrays are empty for compatibility with the existing contract.
+  Extraction/reconciliation can still use temporary evidence before working-data cleanup.
+  Legal source text and the append-only audit history are retained.
+- `POST /api/ui/screening-runs` starts the screening button workflow. `LAW_SOURCE_DIR`
+  defaults to `backend/mock_laws`: unseen PDFs are ingested, then all companies are checked.
+  Result fields: `lawChanges`, `companiesScreened`, `affectedCompanyIds`, `hits`, `deferred`,
+  `complete`. A concurrent run answers `409 busy`; identical sources are skipped.
+- Poll `GET /api/ui/jobs/{id}`; explicit retry is `POST /api/ui/jobs/{id}/retry`.
+- After extraction and deterministic merging, one model check per conflict compares
+  semantic meaning and source context. Equivalent wording uses the clearest, most complete
+  alternative; differing facts can use the best supported alternative for the relevant
+  date and period. Unjustified choices stay unresolved. Reconciled facts expose a `KI-Abgleich:` explanation in `reasoning` and
+  their original sourced values in `alternatives`; the advisor can still edit the value.
+  Only equivalent records fill complementary gaps; a preferred record retains its own
+  values and supporting sources, without borrowing details from rejected alternatives.
+  Confirmation records the reconciliation history without evidence quotes in the audit.
+  `GET /api/ui/screening-runs/latest` restores the latest run after page navigation/reload.
+  Company processing is `GET /api/ui/companies/{id}/processing`; recover and rerun live under
+  the same company path. Recovery never confirms profiles or retries emails.
+- Updates send `profileVersion` from `company.extra.profileVersion`. Capture the version
+  when editing starts. Profile/client-data changes are atomic. Confirm sends `draftVersion`
+  from the reviewed draft; document-update fingerprints also bind the base profile version.
+- Upload with an optional `companyId` creates an update draft for an existing cleaned client.
+  Only new/different values are shown. Confirmation merges these with advisor provenance
+  (the initial implementation deliberately does not preserve document provenance for updates).
+  Pending new-document drafts are protected from cleanup/recovery until advisor review.
+  UI uploads reject the request with per-file details if any file cannot be accepted.
+- Matches group decisions per company/law; manual relevance does not alter backend alerts.
+  `assessment.current=false` denotes history, excluded from current counts and send choices.
+  `review.sendPending=true` requires deliberate resolution before another send.
+- Email sends carry `confirmed: true` plus the exact recipient/subject/body/match IDs.
+  Server checks law terms/placeholders, current relevance, freshness and duplicate/pending
+  sends. A sent status can only advance to discussed. Unclear delivery is never auto-retried.
+- Evidence quotes/candidates are review-only. Confirmed facts and `extra.coreFacts` retain
+  filename/page or advisor provenance. Raw-document links are unavailable. Law source links
+  are hidden when `url` is empty. Template placeholders are `{Anrede}` and `{Signatur}`.
+
+The earlier route table remains the reference for the compatible low-level API.
+
 For the UI team. This lists the features the UI must have and the constraints it must follow so it integrates smoothly with the backend. Exact data shapes (including the profile draft) come from the API: `backend/openapi.json` (on the `backend` branch) is the generated OpenAPI contract you can build mocks and types from; a running server also serves it at `/openapi.json` and interactive docs at `/docs`. Section 3 lists the calls.
 
 **Backend status:**
@@ -28,7 +85,7 @@ Process diagram: `Project Diagram.mmd`. Step numbers: `Project Brief.md` section
    - go through the flow Update entries, type the new values, review a summary, an extra "are you sure" step, then save (there is no undo; a mistake is corrected by a new update);
    - see the audit log: what changed and when (field, old value, new value, reason), plus confirmations, sent emails and template edits;
    - see a hint "embeddings stale" while the backend refreshes the search data after a change.
-6. **Legal sources and screening (steps 11 to 15):** upload a legal-source PDF, list the sources (with "Zusammenfassung" = `summary` and "Was ändert sich?" = `change_summary`), start screening for one or every company, and show a company's matches (law section, matched feature, direction, reason = "Relevanz und Auswirkungen"). Long work is a background job: poll it and offer Retry when it failed or was interrupted.
+6. **Legal sources and screening (steps 11 to 15):** use the screening button to ingest unseen server-side PDFs and screen clients; list the sources (with "Zusammenfassung" = `summary` and "Was ändert sich?" = `change_summary`), show affected companies and a company's matches (law section, matched feature, direction, reason = "Relevanz und Auswirkungen"). Long work is a background job: poll it and offer Retry when it failed or was interrupted.
 7. **Alerts and email (steps 16 to 18):** an alert list with status (new, seen, dismissed, actioned, obsolete) and counts, an alert detail (law section, matched feature, reason) that does not mark the alert seen by itself, explicit "seen" and "dismiss" actions, an email screen and a template-edit screen, and a sent-mail history. The email starts from **one fixed template, the same for every client**, not drafted per company or law. The screen shows the template text; the advisor **can edit text, subject and recipient before sending**, then confirms with an "are you sure" step. The recipient is pre-filled from the profile field *client contact email*; when the profile has none, the preview says "Keine E-Mail-Adresse im Profil gefunden" and the advisor types one. The backend sends exactly what the UI submits and stores every sent email (edited or not) as a snapshot; sends and template edits also appear in the audit log. Editing one email never changes the template; the template changes only through the separate "edit template" screen.
 8. **Recovery:** when Progress reports `recovery.available`, offer one "Finish processing" action (Recover). It never repeats the confirmation and never sends an email.
 

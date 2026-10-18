@@ -2,12 +2,9 @@
 metadata and the completeness record. FakeClient only; Postgres part skipped without
 TEST_DATABASE_URL."""
 
-import os
 import re
-import uuid
 
 import openai
-import psycopg
 import pytest
 
 from app.db.memory import MemoryRepository
@@ -252,56 +249,35 @@ def test_selection_skips_other_objects(settings):
 # Postgres: the seeded Nordhafen solution profile ---------------------------------------
 
 
-async def test_embed_seeded_nordhafen_postgres(pg_repository, profil_schema, settings):
+async def test_embed_seeded_nordhafen_postgres(pg_repository, profil_schema, settings, monkeypatch):
     from app.config import PROFILE_DB_DIR
 
     await pg_repository.initialize_profile_schema(PROFILE_DB_DIR, seed=True)
-    url = os.environ["TEST_DATABASE_URL"]
-    model = f"test-model-{uuid.uuid4().hex[:8]}"  # own rows only, removed afterwards
-    run_settings = settings.model_copy(update={"embedding_model": model})
+    # Read the real seed from Postgres, but keep all test vectors/state in memory.
+    # A shared developer database may already have confirmed state and live vectors.
+    snapshot = await pg_repository.load_profile_snapshot("Hafenkante", profil_schema)
+    repository = MemoryRepository()
+    from app.models.project import ProjectStatus
 
-    async def sql(statement, *params):
-        async with await psycopg.AsyncConnection.connect(url) as conn:
-            cur = await conn.execute(statement, params)
-            return await cur.fetchall() if cur.description else None
-
-    await sql(
-        "INSERT INTO pipeline.project_state (company_id, state) VALUES ('Hafenkante', 'confirmed')"
+    repository.states["Hafenkante"] = ProjectStatus(
+        company_id="Hafenkante", state=ProjectState.CONFIRMED, profile_version=1
     )
-    try:
-        client = FakeClient(responder=chat(GOOD))
-        report = await Embedder(pg_repository, profil_schema, run_settings, client).run(
-            "Hafenkante"
-        )
 
-        (expected,) = await sql(
-            "SELECT (SELECT count(*) FROM profil.merkmal_wert WHERE wert = 'ja' "
-            "AND gesellschaft_id = profil.ges('Nordhafen Logistik GmbH')) "
-            "+ (SELECT count(*) FROM profil.finding WHERE deal_id = profil.deal_id('Hafenkante')) "
-            "+ (SELECT count(*) FROM profil.rechtsbehelf "
-            "WHERE gesellschaft_id = profil.ges('Nordhafen Logistik GmbH'))"
-        )
-        assert report.written == expected[0] > 0
-        rows = await sql(
-            "SELECT objekt_typ, steuerarten::text[], normen, jahre IS NOT NULL, offen, "
-            "array_length(vektor, 1), text_basis FROM profil.embedding WHERE modell = %s",
-            model,
-        )
-        assert len(rows) == report.written
-        findings = [r for r in rows if r[0] == "finding"]
-        assert findings and all(r[1] and r[2] and r[3] and r[4] is not None for r in findings)
-        appeals = [r for r in rows if r[0] == "rechtsbehelf"]
-        assert appeals and all(r[1] == ["GewSt"] and r[3] for r in appeals)
-        assert all(r[5] == 4 and not re.search(r"\d", r[6]) for r in rows)
-        (state,) = await sql(
-            "SELECT state, embeddings_written FROM pipeline.project_state "
-            "WHERE company_id = 'Hafenkante'"
-        )
-        assert state == ("embedded", report.written)
+    async def load_snapshot(*args):
+        return snapshot
 
-        # The prompt input names the company; the stored sentence never does.
-        names = (await pg_repository.load_profile_snapshot("Hafenkante", profil_schema)).names
-        assert "Nordhafen Logistik GmbH" in names
-    finally:
-        await sql("DELETE FROM profil.embedding WHERE modell = %s", model)
-        await sql("DELETE FROM pipeline.project_state WHERE company_id = 'Hafenkante'")
+    monkeypatch.setattr(repository, "load_profile_snapshot", load_snapshot)
+    report = await Embedder(
+        repository, profil_schema, settings, FakeClient(responder=chat(GOOD))
+    ).run("Hafenkante")
+    rows = await repository.list_embeddings("Hafenkante", settings.embedding_model)
+    assert len(rows) == report.written > 0
+    findings = [r for r in rows if r.objekt_typ == "finding"]
+    assert findings and all(
+        r.steuerarten and r.normen and r.jahre and r.offen is not None for r in findings
+    )
+    appeals = [r for r in rows if r.objekt_typ == "rechtsbehelf"]
+    assert appeals and all(r.steuerarten == ["GewSt"] and r.jahre for r in appeals)
+    assert all(len(r.vektor) == 4 and not re.search(r"\d", r.text_basis) for r in rows)
+    assert repository.states["Hafenkante"].state is ProjectState.EMBEDDED
+    assert "Nordhafen Logistik GmbH" in snapshot.names

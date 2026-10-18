@@ -20,7 +20,8 @@ type Step = 'edit' | 'confirm'
 
 /** Matches offered for this email: labeled relevant and not yet sent. */
 export function sendableMatches(matches: Match[]): Match[] {
-  return matches.filter((m) => m.review.label === 'relevant' && m.review.emailStatus === 'not_sent')
+  return matches.filter((m) => m.review.label === 'relevant' && m.review.emailStatus === 'not_sent'
+    && m.assessment.current !== false && !m.review.sendPending)
 }
 
 export function EmailDialog({

@@ -8,6 +8,7 @@ import { Card, CardHeader } from '../components/ui/Card'
 import { ErrorState, LoadingState } from '../components/ui/States'
 import { Tabs } from '../components/ui/Tabs'
 import { useCompany, useLawChanges, useMatches } from '../data/queries'
+import { missingCompanyFacts } from '../data/derive'
 import type { Company, LawChange, Match } from '../data/types'
 import { EmailDialog, sendableMatches } from '../features/email/EmailDialog'
 import { MatchTable } from '../features/matches/MatchTable'
@@ -15,6 +16,7 @@ import { DocumentsTab } from '../features/profile/DocumentsTab'
 import { HistoryPanel } from '../features/profile/HistoryPanel'
 import { NotesTab } from '../features/profile/NotesTab'
 import { ProfileEditor } from '../features/profile/ProfileEditor'
+import { ProcessingStatus } from '../features/profile/ProcessingStatus'
 import { ProfileDetails, StammdatenCard } from '../features/profile/StammdatenCard'
 import { formatDate } from '../lib/format'
 import { companyStatusText, companyStatusTone, textFor, toneFor } from '../lib/labels'
@@ -72,6 +74,16 @@ export function ClientProfilePage() {
         </div>
       )}
 
+      {c.status === 'active' && missingCompanyFacts(c).length > 0 && <Card className="mb-5 border-warning/30">
+        <CardHeader title="Eingabe erforderlich" action={<Button size="sm" onClick={() => setEditing(true)}>Angaben ergänzen</Button>} />
+        <div className="px-5 pb-4 text-sm text-ink-muted">
+          <p>Das Profil ist gespeichert. Diese Informationen fehlen noch:</p>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {missingCompanyFacts(c).map(fact => <li key={fact.id} className="rounded-md bg-warning-soft px-2 py-1 text-xs text-warning">{fact.label}</li>)}
+          </ul>
+        </div>
+      </Card>}
+
       <Tabs items={TABS} value={tab} onChange={(t) => setParams(t === 'uebersicht' ? {} : { tab: t }, { replace: true })} />
 
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="mt-6">
@@ -81,6 +93,7 @@ export function ClientProfilePage() {
         {tab === 'notizen' && <NotesTab key={c.id} company={c} />}
       </div>
 
+      {c.status === 'active' && <ProcessingStatus companyId={c.id} />}
       <ProfileEditor company={c} open={editing} onClose={() => setEditing(false)} />
     </>
   )

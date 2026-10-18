@@ -44,17 +44,22 @@ flowchart TD
         AN --> MERGE
         MERGE --> REVIEW --> PROFILE
         PROFILE --> FEAT --> VEC
-        PROFILE --> DEL
+        VEC --> DEL
         PROFILE -.->|later edits| UPD
         UPD --> PROFILE
         UPD -.->|refresh changed vectors| FEAT
+        MORE["Upload additional DD documents<br/>diff against the confirmed profile"]
+        PROFILE -.-> MORE
+        MORE -->|advisor confirms differences| UPD
+        UI["Klaris HTTP adapter /api/ui<br/>German facts + citations; reviewed versions"]:::note
+        UI -.- REVIEW
         JOBS["Background jobs: embed, clean up, refresh<br/>failed or interrupted: explicit retry or recover"]:::note
         FEAT -.- JOBS
     end
  
     %% Phase 4: Screening loop
     subgraph P4["4. Constant screening loop"]
-        NEWS["Ingest a supplied legal-source PDF<br/>(prototype: BFH I R 1/23; no fetching)"]
+        NEWS["Advisor starts screening<br/>ingest unseen server-side PDFs; skip stored content"]
         CHUNK["Split each law into sections<br/>and embed each section"]
         FILTER{"Stage 1: rule filter<br/>legal form and tax-type overlap"}
         SIM{"Stage 2: max similarity over<br/>company features above threshold?"}
@@ -76,10 +81,11 @@ flowchart TD
     %% Phase 5: Notify and offer
     subgraph P5["5. Notify and reach out"]
         ALERT["Alert the Steuerberater<br/>with matched feature and law section"]
-        DRAFT["Show the fixed email template<br/>advisor may edit the text"]
+        LABEL["Advisor labels company/law matches<br/>relevant, irrelevant or unlabeled"]
+        DRAFT["Show fixed template with greeting/signature<br/>advisor edits exact final text"]
         CONF{"Confirm?"}
-        SEND["Send email to the client<br/>(only current decisions; snapshot + audit entry)"]
-        ALERT --> DRAFT --> CONF
+        SEND["Send one email for selected relevant laws<br/>current decisions, reserved snapshot + audit<br/>unclear delivery requires deliberate resolution"]
+        ALERT --> LABEL --> DRAFT --> CONF
         CONF -->|yes| SEND
         CONF -->|edit| DRAFT
     end

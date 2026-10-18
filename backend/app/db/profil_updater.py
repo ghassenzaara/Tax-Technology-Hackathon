@@ -227,9 +227,23 @@ class ProfilUpdater(ProfilWriter):
             )
         else:
             cells = {k: v for k, v in change.cells.items()}
+            norms = cells.pop("normen", None) if table == "finding" else None
+            changing_norms = table == "finding" and "normen" in change.cells
             self._check_columns(table, cells)
             await self._update(table, row["id"], cells)
             old = {k: row.get(k) for k in cells}
+            if changing_norms:
+                cur = await self.conn.execute(
+                    f"SELECT norm_code FROM {SCHEMA}.finding_norm "
+                    "WHERE finding_id = %s ORDER BY norm_code",
+                    (row["id"],),
+                )
+                old["normen"] = [r[0] for r in await cur.fetchall()]
+                await self.conn.execute(
+                    f"DELETE FROM {SCHEMA}.finding_norm WHERE finding_id = %s", (row["id"],)
+                )
+                await self._after_insert(table, {**row, "normen": norms or []}, row["id"])
+                cells["normen"] = norms or []
             await self._record(spec, table, change, row["id"], key, old, cells)
         await self._close_hints(f"{spec.name} {_label(key)}")
         if table in FEATURE_TABLES:

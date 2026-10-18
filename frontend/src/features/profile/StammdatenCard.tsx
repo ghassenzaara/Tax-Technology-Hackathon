@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
-import { FileText, History, Pencil, UserPen } from 'lucide-react'
+import { History, Pencil } from 'lucide-react'
 import type { Company, Fact } from '../../data/types'
+import { companyProject } from '../../data/derive'
 import { Card, CardHeader } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/States'
-import { reviewStatusText, textFor } from '../../lib/labels'
 import { FactValue } from './FactValue'
 
 const UNGROUPED = 'Weitere Merkmale'
@@ -28,39 +28,12 @@ export function splitFacts(facts: Fact[]): { summary: Fact[]; details: Fact[] } 
   return { summary: facts.filter(isSummary), details: facts.filter((f) => !isSummary(f)) }
 }
 
-function Row({ label, children, footnote, hideLabel }: { label: string; children: ReactNode; footnote?: ReactNode; hideLabel?: boolean }) {
+function Row({ label, children, hideLabel }: { label: string; children: ReactNode; hideLabel?: boolean }) {
   return (
     <div className="py-2">
       <dt className={hideLabel ? 'sr-only' : 'text-xs text-ink-muted'}>{label}</dt>
       <dd className="mt-0.5 text-sm text-ink">{children}</dd>
-      {footnote}
     </div>
-  )
-}
-
-/** After confirmation only filename and page remain (brief 2.2). */
-function SourceLine({ fact }: { fact: Fact }) {
-  if (fact.reviewStatus === 'advisor_entered') {
-    return (
-      <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-subtle">
-        <UserPen className="size-3" aria-hidden />
-        Manuell eingetragen
-      </p>
-    )
-  }
-  if (fact.sources.length === 0) return null
-  return (
-    <p className="mt-0.5 flex items-start gap-1 text-xs text-ink-subtle">
-      <FileText className="mt-px size-3 shrink-0" aria-hidden />
-      <span>
-        {fact.sources.map((s, i) => (
-          <span key={i}>
-            {i > 0 && '; '}
-            {s.filename}, S. {s.page}
-          </span>
-        ))}
-      </span>
-    </p>
   )
 }
 
@@ -69,11 +42,8 @@ function FactRows({ facts, group }: { facts: Fact[]; group?: string }) {
   return (
     <>
       {facts.map((f) => (
-        <Row key={f.id} label={f.label} footnote={<SourceLine fact={f} />} hideLabel={facts.length === 1 && f.label === group}>
-          <FactValue value={f.value} type={f.type} unit={f.unit} label={f.label} />
-          {f.reviewStatus === 'missing' && (
-            <span className="ml-2 text-xs text-ink-subtle">({textFor(reviewStatusText, f.reviewStatus)})</span>
-          )}
+        <Row key={f.id} label={f.label} hideLabel={facts.length === 1 && f.label === group}>
+          <FactValue value={f.reviewStatus === 'missing' ? null : f.value} type={f.type} unit={f.unit} label={f.label} />
         </Row>
       ))}
     </>
@@ -99,10 +69,11 @@ export function IconButton({ label, onClick, children, tone = 'muted' }: { label
 
 export function StammdatenCard({ company, onEdit, onHistory }: { company: Company; onEdit: () => void; onHistory: () => void }) {
   const { contact } = company
-  const core: [string, ReactNode][] = [
-    ['Name', company.name],
-    ['Rechtsform', company.legalForm],
-    ['Branche', company.industry],
+  const core: [string, ReactNode, string?][] = [
+    ['Name', company.name, 'name'],
+    ...(companyProject(company) ? [['Projekt', companyProject(company)] as [string, ReactNode]] : []),
+    ['Rechtsform', company.legalForm, 'legalForm'],
+    ['Branche', company.industry, 'industry'],
     ['Kundennummer', company.customerNumber],
     ['Mandant seit', company.clientSince],
     ['Ansprechpartner', [contact.salutation, contact.name].filter(Boolean).join(' ')],
@@ -112,7 +83,7 @@ export function StammdatenCard({ company, onEdit, onHistory }: { company: Compan
         <a href={`mailto:${contact.email}`} className="break-all text-primary link-underline">
           {contact.email}
         </a>
-      ) : undefined,
+      ) : undefined, 'contact.email',
     ],
     ['Telefon', contact.phone],
   ]
@@ -148,7 +119,7 @@ export function StammdatenCard({ company, onEdit, onHistory }: { company: Compan
 /** All facts outside the summary groups, plus the free extra area. */
 export function ProfileDetails({ company, onEdit }: { company: Company; onEdit: () => void }) {
   const groups = groupFacts(splitFacts(company.facts).details)
-  const extra = Object.entries(company.extra ?? {})
+  const extra = Object.entries(company.extra ?? {}).filter(([key]) => !['projekt', 'profileVersion', 'coreFacts'].includes(key))
 
   if (groups.length === 0 && extra.length === 0) {
     return (
