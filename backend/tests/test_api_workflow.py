@@ -328,7 +328,7 @@ async def test_alerts_template_preview_send_and_history(settings, schema, projec
 
         spec = (await http.get("/openapi.json")).json()
         contract = json.dumps([spec["paths"], spec["components"]]).casefold()
-        assert "calendar" not in contract and "follow_up" not in contract
+        assert "follow_up" not in contract  # the calendar records replies by hand only
         assert "reminder" not in contract
 
 

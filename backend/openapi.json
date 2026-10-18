@@ -7135,6 +7135,357 @@
         }
       }
     },
+    "/api/ui/reset": {
+      "post": {
+        "tags": [
+          "Klaris"
+        ],
+        "summary": "Reset",
+        "operationId": "reset_api_ui_reset_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ui/calendar": {
+      "get": {
+        "tags": [
+          "Klaris"
+        ],
+        "summary": "Calendar",
+        "operationId": "calendar_api_ui_calendar_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CalendarEntry"
+                  },
+                  "type": "array",
+                  "title": "Response Calendar Api Ui Calendar Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ui/outreach/{outreach_id}/response": {
+      "post": {
+        "tags": [
+          "Klaris"
+        ],
+        "summary": "Record Response",
+        "operationId": "record_response_api_ui_outreach__outreach_id__response_post",
+        "parameters": [
+          {
+            "name": "outreach_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Outreach Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResponseBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request, empty_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong_state, stale_draft, stale_profile, busy, run_active, duplicate, send_pending, already_sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "upload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation (details per field), publish_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error (with error_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "send_failed (with outreach_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable, mail_unavailable, llm_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ui/companies/{cid}/audit": {
       "get": {
         "tags": [
@@ -7553,7 +7904,8 @@
           "template_edited",
           "match_review_changed",
           "note_changed",
-          "documents_added"
+          "documents_added",
+          "response_recorded"
         ],
         "title": "AuditKind"
       },
@@ -7688,6 +8040,114 @@
           "file"
         ],
         "title": "Body_upload_law_api_laws_post"
+      },
+      "CalendarEntry": {
+        "properties": {
+          "outreachId": {
+            "type": "string",
+            "title": "Outreachid"
+          },
+          "companyId": {
+            "type": "string",
+            "title": "Companyid"
+          },
+          "companyName": {
+            "type": "string",
+            "title": "Companyname"
+          },
+          "recipient": {
+            "type": "string",
+            "title": "Recipient"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "sentAt": {
+            "type": "string",
+            "title": "Sentat"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting",
+              "accepted",
+              "rejected"
+            ],
+            "title": "Status"
+          },
+          "response": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalendarResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "outreachId",
+          "companyId",
+          "companyName",
+          "recipient",
+          "subject",
+          "sentAt",
+          "status"
+        ],
+        "title": "CalendarEntry",
+        "description": "One sent email on the calendar, with the client's reply once recorded."
+      },
+      "CalendarResponse": {
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "title": "Outcome"
+          },
+          "receivedOn": {
+            "type": "string",
+            "title": "Receivedon"
+          },
+          "meetingAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meetingat"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "recordedAt": {
+            "type": "string",
+            "title": "Recordedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outcome",
+          "receivedOn",
+          "recordedAt"
+        ],
+        "title": "CalendarResponse"
       },
       "CandidateGroup": {
         "properties": {
@@ -10624,6 +11084,54 @@
           "kind"
         ],
         "title": "Resolution"
+      },
+      "ResponseBody": {
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "title": "Outcome"
+          },
+          "receivedOn": {
+            "type": "string",
+            "format": "date",
+            "title": "Receivedon"
+          },
+          "meetingAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meetingat"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "outcome",
+          "receivedOn"
+        ],
+        "title": "ResponseBody"
       },
       "ReviewView": {
         "properties": {

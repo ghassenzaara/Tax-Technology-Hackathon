@@ -8,7 +8,6 @@ import { greetingFor, isOpenTask, newThisMonth, relevantCompanyCount, unreadLawC
 import { useAdvisor, useCompanies, useLawChanges, useMatches } from '../data/queries'
 import { ClientTable } from '../features/clients/ClientTable'
 import { LawChangeRow } from '../features/lawchanges/LawChangeRow'
-import { DraftNotice } from '../features/upload/DraftNotice'
 import { ScreeningControl } from '../features/screening/ScreeningControl'
 import { cn } from '../lib/cn'
 import { ClientSearch, NewClientLink } from './ClientListPage'
@@ -92,10 +91,7 @@ export function DashboardPage() {
         )}
       </Card>
 
-      <div className="mt-6">
-        <DraftNotice />
-      </div>
-      <Card>
+      <Card className="mt-6">
         <CardHeader title="Ihre Mandanten" action={<NewClientLink />} />
         <div className="px-5 pb-4">
           <ClientSearch value={query} onChange={setQuery} />

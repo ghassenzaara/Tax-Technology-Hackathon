@@ -1,0 +1,23 @@
+# Public entry point: HTTPS certificates (Let's Encrypt), login gate, frontend files and
+# the /api proxy. The app has no login of its own, so basic_auth guards everything.
+www.{$KLARIS_DOMAIN} {
+	redir https://{$KLARIS_DOMAIN}{uri} permanent
+}
+
+{$KLARIS_DOMAIN} {
+	encode zstd gzip
+
+	basic_auth {
+		{$KLARIS_USER} {$KLARIS_PASSWORD_HASH}
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

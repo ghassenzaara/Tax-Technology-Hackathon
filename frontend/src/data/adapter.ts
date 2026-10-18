@@ -1,6 +1,7 @@
 import type {
   Advisor,
   AuditEntry,
+  CalendarEntry,
   Company,
   Id,
   LawChange,
@@ -78,6 +79,15 @@ export interface SendEmailInput {
   matchIds: Id[]
 }
 
+export interface ResponseInput {
+  outcome: 'accepted' | 'rejected'
+  /** YYYY-MM-DD */
+  receivedOn: string
+  /** ISO date-time with offset; required when accepted. */
+  meetingAt?: string
+  note?: string
+}
+
 export type MatchFilter = { companyId: Id } | { lawChangeId: Id } | Record<string, never>
 
 /**
@@ -136,6 +146,11 @@ export interface DataAdapter {
   listOutreach(companyId: Id): Promise<Outreach[]>
 
   listAuditEntries(companyId: Id): Promise<AuditEntry[]>
+
+  /** Every sent email with the client's reply (calendar). */
+  listCalendar?(): Promise<CalendarEntry[]>
+  /** Records or replaces the client's reply to a sent email. */
+  recordResponse?(outreachId: Id, input: ResponseInput): Promise<CalendarEntry>
 
   /** Mock only: restore the seed data. */
   resetDemo?(): Promise<void>

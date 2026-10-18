@@ -321,6 +321,22 @@ async def outreach(s: ServicesDep, cid: str):
     return await UiService(s).outreach(cid)
 
 
+@router.post("/reset", status_code=204)
+async def reset(s: ServicesDep):
+    await UiService(s).reset_demo()
+    return Response(status_code=204)
+
+
+@router.get("/calendar", response_model=list[c.CalendarEntry])
+async def calendar(s: ServicesDep):
+    return await UiService(s).calendar()
+
+
+@router.post("/outreach/{outreach_id}/response", response_model=c.CalendarEntry)
+async def record_response(s: ServicesDep, outreach_id: str, body: c.ResponseBody):
+    return await UiService(s).record_response(outreach_id, body)
+
+
 @router.get("/companies/{cid}/audit", response_model=list[c.AuditEntry])
 async def audit(s: ServicesDep, cid: str):
     return await UiService(s).history(cid)

@@ -178,6 +178,28 @@ export interface Outreach {
   providerMessageId?: string
 }
 
+/** The client's reply to a sent email, recorded by hand in the calendar. */
+export interface CalendarResponse {
+  outcome: 'accepted' | 'rejected'
+  receivedOn: string
+  /** The Besprechung, only when accepted. */
+  meetingAt?: string
+  note?: string
+  recordedAt: string
+}
+
+/** One sent email on the calendar. */
+export interface CalendarEntry {
+  outreachId: Id
+  companyId: Id
+  companyName: string
+  recipient: string
+  subject: string
+  sentAt: string
+  status: 'awaiting' | 'accepted' | 'rejected'
+  response?: CalendarResponse
+}
+
 export interface Advisor {
   id: Id
   name: string

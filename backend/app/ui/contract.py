@@ -3,9 +3,10 @@ Pydantic models: camelCase JSON, optional fields left out instead of null (the c
 types them as strings, numbers or objects, never null). Values inside facts, rows and audit
 entries are free JSON and keep their nulls."""
 
+from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_serializer
 from pydantic.alias_generators import to_camel
 
 SCHEMA_VERSION = "0.1.0"
@@ -175,6 +176,36 @@ class Outreach(UiModel):
     sent_at: str
     sent_by: str = ADVISOR_ID
     provider_message_id: str | None = None
+
+
+class CalendarResponse(UiModel):
+    outcome: Literal["accepted", "rejected"]
+    received_on: str  # YYYY-MM-DD
+    meeting_at: str | None = None  # the Besprechung, only when accepted
+    note: str | None = None
+    recorded_at: str
+
+
+class CalendarEntry(UiModel):
+    """One sent email on the calendar, with the client's reply once recorded."""
+
+    outreach_id: str
+    company_id: str
+    company_name: str
+    recipient: str
+    subject: str
+    sent_at: str
+    status: Literal["awaiting", "accepted", "rejected"]
+    response: CalendarResponse | None = None
+
+
+class ResponseBody(UiModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: Literal["accepted", "rejected"]
+    received_on: date
+    meeting_at: AwareDatetime | None = None  # required when accepted, ignored otherwise
+    note: str | None = Field(default=None, max_length=2_000)
 
 
 class Advisor(UiModel):

@@ -49,10 +49,12 @@ ALTER TABLE screening.outreach ALTER COLUMN alert_id DROP NOT NULL;
 ALTER TABLE screening.outreach ADD COLUMN IF NOT EXISTS law_ids bigint[] NOT NULL DEFAULT '{}';
 
 -- New audit kinds. Template resets stay template_edited with new_value.reset = true.
+-- response_recorded belongs to 011_calendar.sql; it is listed here because this
+-- constraint is re-created on every start.
 ALTER TABLE pipeline.audit_log DROP CONSTRAINT IF EXISTS audit_log_kind_check;
 ALTER TABLE pipeline.audit_log ADD CONSTRAINT audit_log_kind_check CHECK (kind IN (
     'profile_confirmed', 'profile_changed', 'email_sent', 'template_edited',
-    'match_review_changed', 'note_changed', 'documents_added'));
+    'match_review_changed', 'note_changed', 'documents_added', 'response_recorded'));
 
 -- The "Screening starten" job: ingest new source PDFs, then screen every company.
 ALTER TABLE pipeline.jobs DROP CONSTRAINT IF EXISTS jobs_operation_check;

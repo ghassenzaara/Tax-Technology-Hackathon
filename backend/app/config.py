@@ -132,6 +132,8 @@ class Settings(BaseSettings):
     # Single-user platform (one Steuerberater, no login): the label stamped as bestaetigt_von
     # and in the audit log by the HTTP API, which takes no person from the caller.
     advisor_label: str = Field(default="Steuerberater", min_length=1)
+    # Prototype only: Einstellungen offers "reset all clients and screening results".
+    demo_reset_enabled: bool = True
 
     # Outreach (16 to 18). TODO: review text/signature, caps and timeout with the advisor.
     mail_mode: Literal["log", "smtp"] = "log"

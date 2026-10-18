@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -210,6 +211,10 @@ async def test_screening_button_ingests_once_and_reuses_decisions(
         job = ok(await http.get(f"/api/ui/jobs/{first['id']}"))
         assert job["status"] == "succeeded", job
         assert job["result"]["lawChanges"] == 1
+        assert not job["result"]["upToDate"]
+        [doc] = job["result"]["documents"]
+        assert doc["new"] and doc["filename"].endswith(".pdf")
+        assert doc["lawChangeId"] == job["result"]["newLawChangeIds"][0]
         assert job["result"]["companiesScreened"] == 1
         assert job["result"]["hits"] > 0
         assert ok(await http.get("/api/ui/screening-runs/latest"))["id"] == job["id"]
@@ -219,6 +224,8 @@ async def test_screening_button_ingests_once_and_reuses_decisions(
         job = ok(await http.get(f"/api/ui/jobs/{second['id']}"))
         assert job["status"] == "succeeded", job
         assert job["result"]["lawChanges"] == 0
+        assert job["result"]["upToDate"]
+        assert [d["new"] for d in job["result"]["documents"]] == [False]
         assert client.completions.calls == calls
 
 
@@ -375,6 +382,63 @@ async def test_ui_multi_send_exact_snapshot_guards_and_resolution(
             )
         assert len(ok(await http.get(root + "/outreach"))) == 1
         assert (await ui_repo.get_alert(alert.id)).status == "actioned"
+
+        # Calendar: the sent email waits for a reply recorded by hand.
+        [entry] = [x for x in ok(await http.get("/api/ui/calendar")) if x["companyId"] == project]
+        assert entry["outreachId"] == sent["id"] and entry["status"] == "awaiting"
+        assert "response" not in entry
+        reply = f"/api/ui/outreach/{sent['id']}/response"
+        today = date.today().isoformat()
+        assert_error(
+            await http.post(reply, json={"outcome": "accepted", "receivedOn": today}),
+            422,
+            "validation_error",
+        )
+        assert_error(
+            await http.post(reply, json={"outcome": "rejected", "receivedOn": "2000-01-01"}),
+            422,
+            "validation_error",
+        )
+        assert_error(
+            await http.post(
+                "/api/ui/outreach/999999/response",
+                json={"outcome": "rejected", "receivedOn": today},
+            ),
+            404,
+            "not_found",
+        )
+        meeting = "2030-05-06T10:30:00+02:00"
+        entry = ok(
+            await http.post(
+                reply,
+                json={"outcome": "accepted", "receivedOn": today, "meetingAt": meeting},
+            )
+        )
+        assert entry["status"] == "accepted"
+        assert entry["response"]["meetingAt"] == "2030-05-06T08:30:00Z"
+        entry = ok(
+            await http.post(
+                reply,
+                json={"outcome": "rejected", "receivedOn": today, "meetingAt": meeting},
+            )
+        )
+        assert entry["status"] == "rejected" and "meetingAt" not in entry["response"]
+        history = ok(await http.get(root + "/audit"))
+        assert [x["summary"] for x in history if x["kind"] == "response_recorded"] == [
+            "Antwort erfasst: abgelehnt",
+            "Antwort erfasst: Besprechung zugesagt",
+        ]
+
+        # Prototype reset: clients, sources, emails and audit go; the template stays. Memory
+        # only: on Postgres it would empty the whole TEST_DATABASE_URL database, which the
+        # docs allow to be the development database.
+        if isinstance(ui_repo, MemoryRepository):
+            template = ok(await http.get("/api/ui/email-template"))
+            ok(await http.post("/api/ui/reset"), 204)
+            assert ok(await http.get("/api/ui/companies")) == []
+            assert ok(await http.get("/api/ui/law-changes")) == []
+            assert ok(await http.get("/api/ui/calendar")) == []
+            assert ok(await http.get("/api/ui/email-template")) == template
 
 
 async def test_ui_profile_edit_and_document_update(

@@ -19,6 +19,7 @@ class AuditKind(StrEnum):
     MATCH_REVIEW_CHANGED = "match_review_changed"  # row_key {law_id}: field, old and new value
     NOTE_CHANGED = "note_changed"  # old and new note text
     DOCUMENTS_ADDED = "documents_added"  # new_value {files, run_id}
+    RESPONSE_RECORDED = "response_recorded"  # calendar: old and new client reply
 
 
 class AuditEntry(BaseModel):

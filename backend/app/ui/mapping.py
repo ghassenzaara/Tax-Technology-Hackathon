@@ -22,7 +22,7 @@ from typing import Any
 
 from app.models.audit import AuditEntry as BackendAuditEntry
 from app.models.audit import AuditKind
-from app.models.client import ClientInfo
+from app.models.client import ClientInfo, OutreachResponse
 from app.models.client import MatchReview as ReviewRow
 from app.models.law import Law, LawKind
 from app.models.law import LawSection as BackendSection
@@ -953,6 +953,29 @@ def outreach_view(row: BackendOutreach, law_of_alert: dict[int, int]) -> ui.Outr
     )
 
 
+def calendar_entry(
+    row: BackendOutreach, company_name: str, response: OutreachResponse | None
+) -> ui.CalendarEntry:
+    return ui.CalendarEntry(
+        outreach_id=str(row.id),
+        company_id=row.company_id,
+        company_name=company_name,
+        recipient=row.recipient,
+        subject=row.subject,
+        sent_at=iso(row.sent_at or row.created_at),
+        status=response.outcome if response else "awaiting",
+        response=ui.CalendarResponse(
+            outcome=response.outcome,
+            received_on=iso(response.received_on),
+            meeting_at=iso(response.meeting_at),
+            note=response.note,
+            recorded_at=iso(response.recorded_at or response.received_on),
+        )
+        if response
+        else None,
+    )
+
+
 # Audit ---------------------------------------------------------------------------------
 
 
@@ -978,6 +1001,12 @@ def audit_view(
         match_ref = match_id(law_id, entry.company_id) if law_id is not None else None
     elif entry.kind is AuditKind.NOTE_CHANGED:
         field = "Notizen"
+    elif entry.kind is AuditKind.RESPONSE_RECORDED:
+        accepted = isinstance(new, dict) and new.get("outcome") == "accepted"
+        summary = (
+            "Antwort erfasst: Besprechung zugesagt" if accepted else "Antwort erfasst: abgelehnt"
+        )
+        old, new = None, None
     elif entry.kind is AuditKind.DOCUMENTS_ADDED:
         files = (new or {}).get("files", 0) if isinstance(new, dict) else 0
         summary, old, new = f"{files} Dokumente hochgeladen", None, None

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from app.config import Settings
 from app.models.alert import Alert, AlertStatus
 from app.models.audit import AuditEntry, AuditFilter
-from app.models.client import ClientInfo, MatchReview, MultiSendRequest
+from app.models.client import ClientInfo, MatchReview, MultiSendRequest, OutreachResponse
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import EmbeddingRecord, ProfileSnapshot
 from app.models.job import Job
@@ -181,6 +181,24 @@ class Repository(ABC):
     ) -> MatchReview:
         """Insert or replace the review with its audit entries in one transaction. Refused
         (SendPendingError) while a send of this law is reserved."""
+
+    @abstractmethod
+    async def reset_demo_data(self) -> None:
+        """Prototype reset: delete every client, law, screening result, email, job, run and
+        audit entry in one transaction. Keeps the email template and the vocabulary
+        (norms, Merkmal definitions, document classes). BusyError while work is active."""
+
+    @abstractmethod
+    async def list_outreach_responses(
+        self, company_id: str | None = None
+    ) -> list[OutreachResponse]: ...
+
+    @abstractmethod
+    async def save_outreach_response(
+        self, response: OutreachResponse, audit: list[AuditEntry] = ()
+    ) -> OutreachResponse:
+        """Insert or replace the client's reply to a sent email with its audit entries in one
+        transaction. NotFoundError for an unknown email, StateError unless it was sent."""
 
     @abstractmethod
     async def list_seen_laws(self) -> list[int]: ...

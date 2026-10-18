@@ -1,5 +1,5 @@
-import { AdapterError, type DataAdapter, type CompanyUpdate, type UploadFileInfo, type FactResolution, type MatchFilter, type EmailTemplate, type StoredEmailTemplate, type TemplateHistoryEntry, type SendEmailInput } from '../adapter'
-import type { Advisor, AuditEntry, Company, LawChange, Match, MatchReviewPatch, Outreach, ProfileDraft, UploadRun, Job, Processing } from '../types'
+import { AdapterError, type DataAdapter, type CompanyUpdate, type UploadFileInfo, type FactResolution, type MatchFilter, type EmailTemplate, type StoredEmailTemplate, type TemplateHistoryEntry, type SendEmailInput, type ResponseInput } from '../adapter'
+import type { Advisor, AuditEntry, CalendarEntry, Company, LawChange, Match, MatchReviewPatch, Outreach, ProfileDraft, UploadRun, Job, Processing } from '../types'
 
 const id = encodeURIComponent
 
@@ -82,6 +82,10 @@ export class HttpAdapter implements DataAdapter {
   sendClientEmail = (input: SendEmailInput) => this.request<Outreach>('/emails', 'POST', { ...input, confirmed: true })
   listOutreach = (cid: string) => this.request<Outreach[]>(`/companies/${id(cid)}/outreach`)
   listAuditEntries = (cid: string) => this.request<AuditEntry[]>(`/companies/${id(cid)}/audit`)
+  resetDemo = () => this.request<void>('/reset', 'POST')
+  listCalendar = () => this.request<CalendarEntry[]>('/calendar')
+  recordResponse = (outreachId: string, input: ResponseInput) =>
+    this.request<CalendarEntry>(`/outreach/${id(outreachId)}/response`, 'POST', input)
   startScreening = () => this.request<Job>('/screening-runs', 'POST')
   getLatestScreening = () => this.request<Job | null>('/screening-runs/latest')
   rerunCompany = (cid: string) => this.request<UploadRun>(`/companies/${id(cid)}/rerun`, 'POST')

@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, FileCheck2, Home, Menu, Search, Settings, Users, X } from 'lucide-react'
+import { Bell, CalendarDays, Home, Menu, Search, Settings, Users, X } from 'lucide-react'
+import logoUrl from '../assets/klaris-logo.png'
 import { isMockData } from '../data'
 import { unreadLawChangeIds } from '../data/derive'
 import { useAdvisor, useMatches } from '../data/queries'
 import { Badge } from '../components/ui/Badge'
+import { ActivityProvider } from '../features/activity/ActivityProvider'
+import { ActivityTray } from '../features/activity/ActivityTray'
 import { cn } from '../lib/cn'
 
 function initials(name: string) {
@@ -30,6 +33,7 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: Home, end: true },
   { to: '/mandanten', label: 'Mandanten', icon: Users, end: false },
   { to: '/gesetzesaenderungen', label: 'Gesetzesänderungen', icon: Bell, end: false, unread: true },
+  { to: '/kalender', label: 'Kalender', icon: CalendarDays, end: false },
   { to: '/einstellungen', label: 'Einstellungen', icon: Settings, end: false },
 ]
 
@@ -38,11 +42,8 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const unread = useUnreadCount()
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-ink">
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <span className="grid size-8 place-items-center rounded-lg bg-white/10 text-white">
-          <FileCheck2 className="size-[18px]" aria-hidden />
-        </span>
-        <span className="text-lg font-semibold tracking-tight text-white">Klaris</span>
+      <div className="flex items-center px-5 py-5">
+        <img src={logoUrl} alt="Klaris" className="h-7 w-auto" />
       </div>
       <nav aria-label="Hauptnavigation" className="flex-1 px-3">
         <ul className="space-y-0.5">
@@ -124,7 +125,10 @@ function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
           className="h-10 w-full rounded-lg border border-line bg-canvas pr-3 pl-9 text-sm placeholder:text-ink-subtle focus:border-primary focus:bg-surface focus:outline-none"
         />
       </form>
-      <div className="ml-auto flex items-center gap-3">
+      <div className="hidden min-w-0 flex-1 md:block">
+        <ActivityTray />
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-3">
         {isMockData && (
           <Badge tone="warning" className="hidden sm:inline-flex">
             Beispieldaten
@@ -158,6 +162,7 @@ export function Layout() {
   }, [menuOpen])
 
   return (
+    <ActivityProvider>
     <div className="min-h-dvh lg:grid lg:grid-cols-[256px_1fr]">
       <aside className="sticky top-0 hidden h-dvh lg:block">
         <Sidebar />
@@ -200,10 +205,14 @@ export function Layout() {
 
       <div className="min-w-0">
         <TopBar onOpenMenu={() => setMenuOpen(true)} />
+        <div className="border-b border-line px-4 py-2 md:hidden empty:hidden">
+          <ActivityTray />
+        </div>
         <main className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <Outlet />
         </main>
       </div>
     </div>
+    </ActivityProvider>
   )
 }

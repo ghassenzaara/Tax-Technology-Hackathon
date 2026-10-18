@@ -123,7 +123,7 @@ function Done({ company, wasNew, changed }: { company: Company; wasNew: boolean;
       <h2 className="mt-4 text-lg font-semibold">{wasNew ? 'Profil bestätigt' : 'Änderungen übernommen'}</h2>
       <p className="mt-1 text-sm text-ink-muted">
         {wasNew
-          ? `Das Profil von ${company.name} ist gespeichert. Mit „Screening starten“ prüfen Sie aktuelle Entwicklungen für diesen Mandanten.`
+          ? `Das Profil von ${company.name} ist gespeichert. Mit „Screening starten“ prüfen Sie aktuelle und zukünftige Entwicklungen für diesen Mandanten.`
           : changed === 0
             ? 'Es gab keine neuen oder abweichenden Werte.'
             : `${changed} ${changed === 1 ? 'Wert wurde' : 'Werte wurden'} geprüft und ins Profil übernommen.`}

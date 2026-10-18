@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { adapter } from './index'
-import type { CompanyUpdate, EmailTemplate, FactResolution, SendEmailInput, StoredEmailTemplate, UploadFileInfo } from './adapter'
+import type { CompanyUpdate, EmailTemplate, FactResolution, ResponseInput, SendEmailInput, StoredEmailTemplate, UploadFileInfo } from './adapter'
 import type { Id, MatchReviewPatch, ProfileDraft } from './types'
 import { keys } from './queries'
 
@@ -43,6 +43,7 @@ export function useSendClientEmail() {
   return useMutation({
     mutationFn: (input: SendEmailInput) => adapter.sendClientEmail(input),
     onSuccess: (outreach) => {
+      qc.invalidateQueries({ queryKey: keys.calendar })
       qc.invalidateQueries({ queryKey: ['matches'] })
       qc.invalidateQueries({ queryKey: keys.audit(outreach.companyId) })
       qc.invalidateQueries({ queryKey: ['outreach', outreach.companyId] })
@@ -109,6 +110,19 @@ export function useConfirmProfile(companyId: Id, draftVersion?: string) {
       qc.invalidateQueries({ queryKey: ['emailTemplate', companyId] })
       qc.invalidateQueries({ queryKey: ['draftCompanies'] })
       qc.invalidateQueries({ queryKey: ['processing', companyId] })
+    },
+  })
+}
+
+/** Records the client's reply; accepted replies put the Besprechung on the calendar. */
+export function useRecordResponse() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ outreachId, input }: { outreachId: Id; input: ResponseInput }) =>
+      adapter.recordResponse!(outreachId, input),
+    onSuccess: (entry) => {
+      qc.invalidateQueries({ queryKey: keys.calendar })
+      qc.invalidateQueries({ queryKey: keys.audit(entry.companyId) })
     },
   })
 }

@@ -25,7 +25,7 @@ from app.db.repository import (
 )
 from app.models.alert import SENDABLE, Alert, AlertStatus
 from app.models.audit import AuditEntry, AuditFilter, AuditKind
-from app.models.client import ClientInfo, MatchReview, MultiSendRequest
+from app.models.client import ClientInfo, MatchReview, MultiSendRequest, OutreachResponse
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import (
     AppealRow,
@@ -95,6 +95,7 @@ class MemoryRepository(Repository):
         self.jobs: dict[str, Job] = {}
         self.client_info: dict[str, ClientInfo] = {}
         self.match_reviews: dict[tuple[str, int], MatchReview] = {}  # (company, law) -> row
+        self.outreach_responses: dict[int, OutreachResponse] = {}  # outreach id -> reply
         self.seen_laws: dict[int, datetime] = {}
         self._next_id = 0
 
@@ -798,6 +799,36 @@ class MemoryRepository(Repository):
             )
         stored = review.model_copy(update={"updated_at": datetime.now(UTC)}, deep=True)
         self.match_reviews[(review.company_id, review.law_id)] = stored
+        for entry in audit:
+            await self.append_audit(entry)
+        return stored.model_copy(deep=True)
+
+    async def reset_demo_data(self) -> None:
+        if any(j.status in {"queued", "running"} for j in self.jobs.values()) or any(
+            r.state in {"queued", "running"} for r in self.runs.values()
+        ):
+            raise BusyError("work is still running; reset refused")
+        template, norm_codes = self.template, self.norm_codes
+        self.__init__(self.settings)
+        self.template, self.norm_codes = template, norm_codes
+
+    async def list_outreach_responses(self, company_id=None) -> list[OutreachResponse]:
+        return [
+            r.model_copy(deep=True)
+            for _, r in sorted(self.outreach_responses.items())
+            if company_id is None or r.company_id == company_id
+        ]
+
+    async def save_outreach_response(
+        self, response: OutreachResponse, audit: list[AuditEntry] = ()
+    ) -> OutreachResponse:
+        row = self.outreach.get(response.outreach_id)
+        if row is None:
+            raise NotFoundError(f"no outreach with id {response.outreach_id}")
+        if row.status != "sent" or row.company_id != response.company_id:
+            raise StateError(f"outreach {row.id} is {row.status}; no reply can be recorded")
+        stored = response.model_copy(update={"recorded_at": datetime.now(UTC)}, deep=True)
+        self.outreach_responses[row.id] = stored
         for entry in audit:
             await self.append_audit(entry)
         return stored.model_copy(deep=True)

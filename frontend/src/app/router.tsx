@@ -8,6 +8,7 @@ import { UploadPage } from '../pages/UploadPage'
 import { ReviewPage } from '../pages/ReviewPage'
 import { ClientProfilePage } from '../pages/ClientProfilePage'
 import { SettingsPage } from '../pages/SettingsPage'
+import { CalendarPage } from '../pages/CalendarPage'
 import { EmailTemplatePage } from '../pages/EmailTemplatePage'
 import { NotFoundPage, RouteError } from '../pages/NotFoundPage'
 
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
           { path: 'mandanten/:id', element: <ClientProfilePage /> },
           { path: 'mandanten/:id/upload', element: <UploadPage /> },
           { path: 'mandanten/:id/pruefung', element: <ReviewPage /> },
+          { path: 'kalender', element: <CalendarPage /> },
           { path: 'einstellungen', element: <SettingsPage /> },
           { path: 'einstellungen/email-vorlage', element: <EmailTemplatePage /> },
           { path: '*', element: <NotFoundPage /> },

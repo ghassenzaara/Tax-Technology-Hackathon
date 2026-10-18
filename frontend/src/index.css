@@ -183,6 +183,23 @@
   }
 }
 
+/* Background task chips in the top bar: slide in, and the check pops when work finishes. */
+.activity-chip {
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out), background-color 300ms, color 300ms, border-color 300ms;
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.activity-pop {
+  animation: activity-pop 360ms var(--ease-out);
+}
+@keyframes activity-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
 /* Reduced motion: fewer and gentler. Movement goes, color and opacity fades stay. */
 @media (prefers-reduced-motion: reduce) {
   *:not(.animate-spin),
@@ -198,6 +215,7 @@
   .nudge-back,
   .app-dialog,
   .app-dialog[open],
+  .activity-chip,
   .menu-pop {
     transform: none !important;
   }

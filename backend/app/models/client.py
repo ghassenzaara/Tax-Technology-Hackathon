@@ -2,13 +2,14 @@
 advisor's review of a match (one per company and law) and the read state of law changes.
 Rows of `pipeline.client_info`, `screening.match_review` and `screening.law_seen`."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
 MatchLabel = Literal["unlabeled", "relevant", "irrelevant"]
 EmailStatus = Literal["not_sent", "sent", "discussed"]
+ResponseOutcome = Literal["accepted", "rejected"]
 
 
 class ClientInfo(BaseModel):
@@ -53,3 +54,16 @@ class MultiSendRequest(BaseModel):
     subject: str
     body: str
     confirmed: Literal[True]
+
+
+class OutreachResponse(BaseModel):
+    """The client's reply to a sent email, recorded by hand (calendar). Accepted replies
+    carry the date of the Besprechung. Row of `screening.outreach_response`."""
+
+    outreach_id: int
+    company_id: str
+    outcome: ResponseOutcome
+    received_on: date
+    meeting_at: datetime | None = None  # set exactly when accepted
+    note: str | None = None
+    recorded_at: datetime | None = None

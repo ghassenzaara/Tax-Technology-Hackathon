@@ -11,6 +11,7 @@ import { adapter, isMockData } from '../data'
 import type { UploadFileInfo } from '../data/adapter'
 import { useUploadFiles } from '../data/mutations'
 import { useCompany } from '../data/queries'
+import { useActivities } from '../features/activity/ActivityProvider'
 import { MAX_FILE_BYTES, extensionOf, fromDataTransfer, fromFileList, isSupported, mergeFiles } from '../features/upload/collectFiles'
 import { STEP, stepsFor } from '../features/upload/steps'
 import { cn } from '../lib/cn'
@@ -22,6 +23,7 @@ export function UploadPage() {
   const company = useCompany(id ?? '', !!id)
   const upload = useUploadFiles(id ?? null)
   const navigate = useNavigate()
+  const { track } = useActivities()
   const [files, setFiles] = useState<UploadFileInfo[]>([])
   const [dragging, setDragging] = useState(false)
   const [reading, setReading] = useState(false)
@@ -53,7 +55,14 @@ export function UploadPage() {
 
   function start() {
     upload.mutate(files, {
-      onSuccess: (run) => navigate(`${hrefFor(run.companyId)}/pruefung?run=${encodeURIComponent(run.id)}`),
+      onSuccess: (run) => {
+        if (!isMockData) {
+          // Short name for the top bar: the uploaded folder, else the existing client.
+          const folder = files.find((f) => f.relativePath.includes('/'))?.relativePath.split('/')[0]
+          track({ id: run.id, kind: 'upload', companyId: run.companyId, label: c?.name ?? folder ?? 'Upload' })
+        }
+        navigate(`${hrefFor(run.companyId)}/pruefung?run=${encodeURIComponent(run.id)}`)
+      },
     })
   }
 

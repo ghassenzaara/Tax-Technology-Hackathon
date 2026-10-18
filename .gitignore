@@ -3,3 +3,5 @@
 CLAUDE.md
 *Plan.md
 handout.md
+# Server secrets for compose.prod.yml
+/.env

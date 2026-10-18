@@ -351,17 +351,24 @@ class JobManager:
         if not source.is_dir():
             raise StateError("the configured law source folder does not exist")
         new_ids = []
+        documents = []  # every source PDF checked by this run, new or already stored
         for path in sorted(source.rglob("*")):
             if not path.is_file() or path.suffix.lower() != ".pdf":
                 continue
             digest = sha256(await asyncio.to_thread(path.read_bytes)).hexdigest()
-            if await self.repository.find_law(digest):
+            if known := await self.repository.find_law(digest):
+                documents.append(_screened_document(path, known.id, known.title, new=False))
                 continue
             try:
                 report = await ingest_law(path, self.repository, self.settings, self.client)
             except DuplicateLawError:
-                continue  # another API ingestion stored the same source concurrently
+                # another API ingestion stored the same source concurrently
+                known = await self.repository.find_law(digest)
+                if known:
+                    documents.append(_screened_document(path, known.id, known.title, new=False))
+                continue
             new_ids.append(str(report.law_id))
+            documents.append(_screened_document(path, report.law_id, report.title, new=True))
         eligible = {
             s.company_id
             for s in await self.repository.list_project_states()
@@ -374,6 +381,8 @@ class JobManager:
         return {
             "newLawChangeIds": new_ids,
             "lawChanges": len(new_ids),
+            "documents": documents,
+            "upToDate": not new_ids,
             "companiesScreened": sum(r.status in {"screened", "nothing_to_do"} for r in reports),
             "affectedCompanyIds": [r.company_id for r in reports if r.hits],
             "hits": sum(r.hits for r in reports),
@@ -415,6 +424,10 @@ class JobManager:
                     {k: v for k, v in r.summary().items() if k != "scored"} for r in reports
                 ]
         return result
+
+
+def _screened_document(path: Path, law_id: int | None, title: str, *, new: bool) -> dict[str, Any]:
+    return {"filename": path.name, "lawChangeId": str(law_id), "title": title, "new": new}
 
 
 def job_view(job: Job | None) -> JobView | None:

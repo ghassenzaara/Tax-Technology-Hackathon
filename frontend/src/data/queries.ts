@@ -12,6 +12,7 @@ export const keys = {
   lawChange: (id: Id) => ['lawChanges', id] as const,
   matches: (filter: MatchFilter = {}) => ['matches', filter] as const,
   audit: (companyId: Id) => ['audit', companyId] as const,
+  calendar: ['calendar'] as const,
 }
 
 export const useAdvisor = () => useQuery({ queryKey: keys.advisor, queryFn: () => adapter.getCurrentAdvisor() })
@@ -43,3 +44,5 @@ export const useProfileDraft = (companyId: Id, enabled = true) =>
 export const useDraftCompanies = () => useQuery({ queryKey: ['draftCompanies'], queryFn: () => adapter.listDraftCompanies() })
 export const useOutreach = (companyId: Id, enabled = true) =>
   useQuery({ queryKey: ['outreach', companyId], queryFn: () => adapter.listOutreach(companyId), enabled })
+export const useCalendar = () =>
+  useQuery({ queryKey: keys.calendar, queryFn: () => adapter.listCalendar!(), enabled: !!adapter.listCalendar })

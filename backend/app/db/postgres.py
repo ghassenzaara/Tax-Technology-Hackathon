@@ -39,7 +39,7 @@ from app.db.repository import (
 )
 from app.models.alert import SENDABLE, Alert, AlertStatus
 from app.models.audit import AuditEntry, AuditFilter, AuditKind
-from app.models.client import ClientInfo, MatchReview, MultiSendRequest
+from app.models.client import ClientInfo, MatchReview, MultiSendRequest, OutreachResponse
 from app.models.extraction import Candidate, DocumentExtraction
 from app.models.features import EmbeddingRecord, ProfileSnapshot
 from app.models.job import Job
@@ -61,6 +61,14 @@ from app.profile.review import draft_version
 from app.profile.schema import ProfileSchema
 
 MIGRATIONS = Path(__file__).parent / "migrations"
+# Tables a prototype reset keeps: the stored email template and the teammates' vocabulary.
+RESET_KEEPS = (
+    "profil.dokument_klasse",
+    "profil.merkmal_def",
+    "profil.merkmal_norm",
+    "profil.norm",
+    "screening.email_template",
+)
 # Order from db_scheme/README.md. The schema file starts with DROP SCHEMA profil CASCADE.
 PROFILE_SCHEMA_FILES = ("01_schema.sql", "02_vokabular.sql", "03_scan_und_views.sql")
 SEED_PROJECT = re.compile(r"INSERT INTO deal\s*\([^)]*\)\s*VALUES\s*\(\s*'([^']+)'", re.S)
@@ -1480,6 +1488,73 @@ class PostgresRepository(Repository):
                     review.model_dump(),
                 )
                 stored = MatchReview.model_validate(await cur.fetchone())
+            for entry in audit:
+                await write_audit(conn, entry)
+        return stored
+
+    async def reset_demo_data(self) -> None:
+        async with await self._connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "SELECT (SELECT count(*) FROM pipeline.jobs WHERE status IN "
+                "('queued', 'running')) + (SELECT count(*) FROM pipeline.runs WHERE state IN "
+                "('queued', 'running'))"
+            )
+            if (await cur.fetchone())[0]:
+                raise BusyError("work is still running; reset refused")
+            cur = await conn.execute(
+                "SELECT format('%%I.%%I', schemaname, tablename) FROM pg_tables "
+                "WHERE schemaname IN ('profil', 'pipeline', 'screening') "
+                "AND schemaname || '.' || tablename <> ALL(%s) ORDER BY 1",
+                (list(RESET_KEEPS),),
+            )
+            tables = [row[0] for row in await cur.fetchall()]
+            # The audit log refuses TRUNCATE by trigger; the reset is the one deliberate
+            # exception, inside this transaction only.
+            await conn.execute(
+                "ALTER TABLE pipeline.audit_log DISABLE TRIGGER audit_log_no_truncate"
+            )
+            await conn.execute(f"TRUNCATE {', '.join(tables)} RESTART IDENTITY")
+            await conn.execute(
+                "ALTER TABLE pipeline.audit_log ENABLE TRIGGER audit_log_no_truncate"
+            )
+
+    async def list_outreach_responses(
+        self, company_id: str | None = None
+    ) -> list[OutreachResponse]:
+        async with await self._connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT * FROM screening.outreach_response "
+                "WHERE (%(c)s::text IS NULL OR company_id = %(c)s) ORDER BY outreach_id",
+                {"c": company_id},
+            )
+            return [OutreachResponse.model_validate(row) for row in await cur.fetchall()]
+
+    async def save_outreach_response(
+        self, response: OutreachResponse, audit: list[AuditEntry] = ()
+    ) -> OutreachResponse:
+        async with await self._connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "SELECT status, company_id FROM screening.outreach WHERE id = %s FOR UPDATE",
+                (response.outreach_id,),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise NotFoundError(f"no outreach with id {response.outreach_id}")
+            if row[0] != "sent" or row[1] != response.company_id:
+                raise StateError(
+                    f"outreach {response.outreach_id} is {row[0]}; no reply can be recorded"
+                )
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    "INSERT INTO screening.outreach_response (outreach_id, company_id, outcome, "
+                    "received_on, meeting_at, note, recorded_at) VALUES (%(outreach_id)s, "
+                    "%(company_id)s, %(outcome)s, %(received_on)s, %(meeting_at)s, %(note)s, "
+                    "now()) ON CONFLICT (outreach_id) DO UPDATE SET outcome = EXCLUDED.outcome, "
+                    "received_on = EXCLUDED.received_on, meeting_at = EXCLUDED.meeting_at, "
+                    "note = EXCLUDED.note, recorded_at = now() RETURNING *",
+                    response.model_dump(),
+                )
+                stored = OutreachResponse.model_validate(await cur.fetchone())
             for entry in audit:
                 await write_audit(conn, entry)
         return stored

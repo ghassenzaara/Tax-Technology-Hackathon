@@ -11,13 +11,15 @@ from app.db.repository import BusyError, NotFoundError, StaleDraftError, StateEr
 from app.mail.provider import DeliveryUncertain, MailError, make_provider
 from app.mail.validate import address, mail_text
 from app.models.audit import AuditEntry, AuditFilter, AuditKind
-from app.models.client import ClientInfo, MatchReview, MultiSendRequest
+from app.models.client import ClientInfo, MatchReview, MultiSendRequest, OutreachResponse
 from app.models.outreach import DEFAULT_BODY, DEFAULT_SUBJECT
 from app.models.project import EMBEDDABLE
 from app.models.review import ConfirmRequest
 from app.models.run import Run
 from app.models.update import UpdateRequest
 from app.profile.review import apply_decisions, draft_version
+from app.runs.jobs import LAW_UPLOADS
+from app.runs.upload import UPLOADS
 from app.services.cleanup import checked_paths, cleanup_targets
 from app.services.confirm import confirm_profile, review_profile
 from app.services.email import SendFailed, SendUncertain
@@ -583,6 +585,76 @@ class UiService:
             for o in await self.repo.list_outreach(cid)
             if o.status == "sent"
         ]
+
+    async def reset_demo(self) -> None:
+        """Prototype reset (Einstellungen): every client, law, screening result, email and
+        audit entry goes; the email template and the vocabulary stay. Source PDFs in
+        LAW_SOURCE_DIR are untouched, so the next screening ingests them again."""
+        settings = self.s.settings
+        if not settings.demo_reset_enabled:
+            raise ApiError(403, ErrorCode.NOT_ALLOWED, "Das Zurücksetzen ist deaktiviert.")
+        if self.s.runs._tasks or self.s.jobs._tasks:
+            raise BusyError("Es laufen noch Verarbeitungen. Bitte warten, bis sie fertig sind.")
+        await self.repo.reset_demo_data()
+        root = settings.data_dir.resolve()
+        for name in (UPLOADS, LAW_UPLOADS):
+            path = (root / name).resolve()
+            if path != root and path.is_relative_to(root) and path.is_dir():
+                await asyncio.to_thread(shutil.rmtree, path, True)
+
+    async def calendar(self) -> list[ui.CalendarEntry]:
+        """Every sent email with the client's reply (newest first); meetings come from
+        accepted replies."""
+        names = {x.id: x.name for x in await self.companies()}
+        replies = {r.outreach_id: r for r in await self.repo.list_outreach_responses()}
+        return [
+            m.calendar_entry(o, names.get(o.company_id, o.company_id), replies.get(o.id))
+            for o in await self.repo.list_outreach()
+            if o.status == "sent"
+        ]
+
+    async def record_response(self, outreach_id: str, body: ui.ResponseBody) -> ui.CalendarEntry:
+        oid = int(outreach_id) if outreach_id.isdigit() else 0
+        sent = next(
+            (o for o in await self.repo.list_outreach() if o.id == oid and o.status == "sent"),
+            None,
+        ) or self.missing("E-Mail")
+        accepted = body.outcome == "accepted"
+        if accepted and body.meeting_at is None:
+            raise m.MappingError("Bitte Datum und Uhrzeit der Besprechung angeben.")
+        if body.received_on < (sent.sent_at or sent.created_at).date():
+            raise m.MappingError("Die Antwort kann nicht vor dem Versand eingegangen sein.")
+        old = next(
+            (
+                r
+                for r in await self.repo.list_outreach_responses(sent.company_id)
+                if r.outreach_id == oid
+            ),
+            None,
+        )
+        response = OutreachResponse(
+            outreach_id=oid,
+            company_id=sent.company_id,
+            outcome=body.outcome,
+            received_on=body.received_on,
+            meeting_at=body.meeting_at.astimezone(UTC) if accepted else None,
+            note=(body.note or "").strip() or None,
+        )
+        snapshot = ("outcome", "received_on", "meeting_at", "note")
+        stored = await self.repo.save_outreach_response(
+            response,
+            [
+                self.audit(
+                    sent.company_id,
+                    AuditKind.RESPONSE_RECORDED,
+                    outreach_id=oid,
+                    old_value=old.model_dump(mode="json", include=set(snapshot)) if old else None,
+                    new_value=response.model_dump(mode="json", include=set(snapshot)),
+                )
+            ],
+        )
+        name = next((x.name for x in await self.companies() if x.id == sent.company_id), None)
+        return m.calendar_entry(sent, name or sent.company_id, stored)
 
     async def history(self, cid: str) -> list[ui.AuditEntry]:
         await company(self.s, cid)

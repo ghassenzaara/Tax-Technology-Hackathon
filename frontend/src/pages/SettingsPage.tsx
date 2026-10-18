@@ -10,21 +10,26 @@ import { ConfirmDialog } from '../components/ui/Dialog'
 import { adapter, isMockData } from '../data'
 import { Badge } from '../components/ui/Badge'
 import { useStoredEmailTemplate } from '../data/queries'
+import { useActivities } from '../features/activity/ActivityProvider'
 
 export function SettingsPage() {
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const stored = useStoredEmailTemplate()
   const [busy, setBusy] = useState(false)
+  const { clear: clearActivities } = useActivities()
 
   async function reset() {
     if (!adapter.resetDemo) return
     setBusy(true)
     try {
       await adapter.resetDemo()
+      clearActivities()
       await queryClient.invalidateQueries()
-      toast.success('Demo wurde zurückgesetzt.')
+      toast.success(isMockData ? 'Demo wurde zurückgesetzt.' : 'Mandanten und Screening wurden zurückgesetzt.')
       setConfirming(false)
+    } catch (problem) {
+      toast.error(problem instanceof Error ? problem.message : 'Zurücksetzen fehlgeschlagen.')
     } finally {
       setBusy(false)
     }
@@ -52,14 +57,18 @@ export function SettingsPage() {
             <ChevronRight className="size-5 shrink-0 text-ink-subtle nudge" aria-hidden />
           </Link>
         </Card>
-        {isMockData && adapter.resetDemo && (
+        {adapter.resetDemo && (
           <Card className="max-w-2xl">
-            <CardHeader title="Demo" />
+            <CardHeader title={isMockData ? 'Demo' : 'Prototyp zurücksetzen'} />
             <div className="flex flex-wrap items-center justify-between gap-4 px-5 pb-5">
-              <p className="text-sm text-ink-muted">Setzt alle Beispieldaten und die E-Mail Vorlage auf den Ausgangszustand zurück.</p>
-              <Button onClick={() => setConfirming(true)}>
+              <p className="max-w-md text-sm text-ink-muted">
+                {isMockData
+                  ? 'Setzt alle Beispieldaten und die E-Mail Vorlage auf den Ausgangszustand zurück.'
+                  : 'Löscht alle Mandanten, Gesetzesänderungen, Screening-Ergebnisse, gesendeten E-Mails, Kalendereinträge und den Verlauf. Die E-Mail Vorlage bleibt erhalten. Das nächste Screening liest die Quellen neu ein.'}
+              </p>
+              <Button variant={isMockData ? 'secondary' : 'danger'} onClick={() => setConfirming(true)}>
                 <RotateCcw className="size-4" aria-hidden />
-                Demo zurücksetzen
+                {isMockData ? 'Demo zurücksetzen' : 'Alles zurücksetzen'}
               </Button>
             </div>
           </Card>
@@ -74,7 +83,7 @@ export function SettingsPage() {
         onCancel={() => setConfirming(false)}
         onConfirm={reset}
       >
-        Alle Änderungen in der Demo gehen verloren.
+        {isMockData ? 'Alle Änderungen in der Demo gehen verloren.' : 'Alle Mandanten und Screening-Ergebnisse werden endgültig gelöscht.'}
       </ConfirmDialog>
     </>
   )
