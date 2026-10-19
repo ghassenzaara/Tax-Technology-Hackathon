@@ -12,6 +12,12 @@
 </p>
 
 <p align="center">
+  <i>Built at the Tax Technology Hackathon Frankfurt 2026, where it was selected as one of the winning teams.</i>
+</p>
+
+<p align="center"><a href="https://justklaris.com">Live demo</a></p>
+
+<p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black">
