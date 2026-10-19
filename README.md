@@ -32,8 +32,9 @@
 
 After a due diligence, a tax advisor knows a company better than ever: its loss
 carryforwards, shareholder changes, open tax years, real estate, intercompany loans. Then
-the DD folder disappears into an archive. Months later a BFH ruling or a BMF letter changes
-the rules for exactly that situation, and nobody connects the two.
+the DD folder disappears into an archive. Months later a ruling of the Federal Fiscal
+Court (BFH) or a letter from the Federal Ministry of Finance (BMF) changes the rules for
+exactly that situation, and nobody connects the two.
 
 ## What Klaris does
 
