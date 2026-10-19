@@ -6,9 +6,10 @@
 </p>
 
 <p align="center">
-  <b>From due diligence to proactive tax advice.</b><br>
-  Klaris turns a DD data room into a living company profile, screens new tax law against it
-  and tells the Steuerberater which clients to call, with the email already written.
+  <b>Proactive tax advice that wins follow-up mandates.</b><br>
+  Klaris is a business development tool for tax advisors. It keeps what they learned in a
+  due diligence, flags new tax law that affects each client and prepares the outreach,
+  so a single DD becomes the start of a long-term advisory relationship.
 </p>
 
 <p align="center">
